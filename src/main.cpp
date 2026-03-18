@@ -1,7 +1,6 @@
 // main.cpp
-// Phase 1: static visualisation of three-point bending setup
-// Three beam scales (Low / Middle / High) displayed side-by-side to
-// reproduce the scale-consistency comparison shown in Fig. 5.
+// Phase 2+: Implicit BDEM simulation with three-point bending (Fig. 5).
+// Three beam scales (Low / Middle / High) displayed side-by-side.
 
 #ifdef __APPLE__
   #include <GLUT/glut.h>
@@ -29,20 +28,20 @@
 #include "Particle.h"
 #include "Bond.h"
 #include "HexPacking.h"
+#include "Simulation.h"
 
 // ---------------------------------------------------------------------------
 // Window / viewport constants
 // ---------------------------------------------------------------------------
 static const int NUM_SCALES = 3;
-static const int VP_W       = 400; // width  of one viewport (pixels)
-static const int VP_H       = 450; // height of one viewport (pixels)
+static const int VP_W       = 400;  // width  of one viewport (pixels)
+static const int VP_H       = 450;  // height of one viewport (pixels)
 static const int WIN_W      = VP_W * NUM_SCALES;
 static const int WIN_H      = VP_H;
 
 // ---------------------------------------------------------------------------
-// Beam configurations (Table 2, BDEM rows)
-// Same physical dimensions L x H x W = 1.0 x 0.15 x 0.12 m; only r varies.
-// Expected particle counts: Low ~530, Middle ~1800, High ~18000
+// Beam configurations (Table 2, BDEM rows).
+// Physical dimensions L x H x W = 1.0 x 0.15 x 0.12 m; only r varies.
 // ---------------------------------------------------------------------------
 static const BeamConfig SCALE_CFG[NUM_SCALES] = {
   // label    L      H      W      r       density  E      nu   tauC
@@ -52,15 +51,25 @@ static const BeamConfig SCALE_CFG[NUM_SCALES] = {
 };
 
 // ---------------------------------------------------------------------------
-// Per-scale simulation data
+// SimConfig for each scale (from Table 2 and paper Section 6)
 // ---------------------------------------------------------------------------
-struct ScaleData {
-  BeamConfig            cfg;
-  std::vector<Particle> particles;
-  std::vector<Bond>     bonds;
+static const SimConfig SIM_CFG[NUM_SCALES] = {
+  // dt values match paper Table 2 (small dt needed for Jacobi convergence,
+  // spectral_radius = Sigma_kn/(m/dt^2 + Sigma_kn) ~ 0.965 -> 83% per 50 iters).
+  // loadVel tuned so fracture_deflection/dt gives ~23-25 display frames.
+  // delta_crit ~ 3.3mm from beam theory: F_crit = tauC*8*I/(L*H).
+  //  dt        E       nu    tauC  loadVel  grav  maxIter  eps
+  { 2.0e-5f, 1e7f, 0.3f, 3e4f,  7.5f, 0.0f,  50, 1e-3f }, // Low    fracture ~23
+  { 9.1e-6f, 1e7f, 0.3f, 3e4f, 15.0f, 0.0f,  50, 1e-3f }, // Middle fracture ~25
+  { 5.8e-5f, 1e7f, 0.3f, 3e4f,  2.5f, 0.0f,  20, 1e-3f }, // High   fracture ~25
 };
 
-static ScaleData g_scales[NUM_SCALES];
+// ---------------------------------------------------------------------------
+// Simulation objects and control state
+// ---------------------------------------------------------------------------
+static Simulation g_sims[NUM_SCALES];
+static bool       g_running   = false;
+static bool       g_stepOnce  = false;
 
 // ---------------------------------------------------------------------------
 // Helper: draw a null-terminated C string at the current raster position
@@ -74,8 +83,8 @@ static void drawString(const char* s) {
 // Render one beam scale into its viewport
 // ---------------------------------------------------------------------------
 static void drawScale(int index) {
-  const ScaleData&  sd  = g_scales[index];
-  const BeamConfig& cfg = sd.cfg;
+  const Simulation& sim = g_sims[index];
+  const BeamConfig& cfg = sim.beamCfg;
 
   // -- Viewport (left edge depends on column index) --
   glViewport(index * VP_W, 0, VP_W, VP_H);
@@ -90,7 +99,7 @@ static void drawScale(int index) {
   float xRange  = xMax - xMin;
 
   // Preserve aspect ratio: compute yRange from viewport aspect
-  float aspect = (float)VP_H / (float)VP_W;
+  float aspect  = (float)VP_H / (float)VP_W;
   float yRange  = xRange * aspect;
   float yCentre = cfg.H * 0.5f;
 
@@ -111,23 +120,23 @@ static void drawScale(int index) {
   glClear(GL_COLOR_BUFFER_BIT);
   glDisable(GL_SCISSOR_TEST);
 
-  // -- Draw bonds as thin lines (XY projection) --
+  // -- Draw active bonds as thin lines (XY projection) --
   {
     float lw = std::max(0.5f, cfg.r * worldToPixel * 0.3f);
     glLineWidth(lw);
     glColor3f(0.45f, 0.50f, 0.55f);
     glBegin(GL_LINES);
-    for (const auto& b : sd.bonds) {
+    for (const auto& b : sim.bonds) {
       if (b.broken) continue;
-      const glm::vec3& pi = sd.particles[b.i].pos;
-      const glm::vec3& pj = sd.particles[b.j].pos;
+      const glm::vec3& pi = sim.particles[b.i].pos;
+      const glm::vec3& pj = sim.particles[b.j].pos;
       glVertex2f(pi.x, pi.y);
       glVertex2f(pj.x, pj.y);
     }
     glEnd();
   }
 
-  // -- Draw particles as points (GL_POINTS, size proportional to radius) --
+  // -- Draw particles as points (size proportional to radius) --
   float ptSize = std::max(1.5f, 2.0f * cfg.r * worldToPixel);
   glPointSize(ptSize);
   glEnable(GL_POINT_SMOOTH);
@@ -137,7 +146,7 @@ static void drawScale(int index) {
   // Regular particles (gray)
   glBegin(GL_POINTS);
   glColor4f(0.70f, 0.72f, 0.75f, 0.90f);
-  for (const auto& p : sd.particles) {
+  for (const auto& p : sim.particles) {
     if (!p.isSupport && !p.isLoad)
       glVertex2f(p.pos.x, p.pos.y);
   }
@@ -147,7 +156,7 @@ static void drawScale(int index) {
   glPointSize(std::max(3.0f, ptSize * 1.4f));
   glBegin(GL_POINTS);
   glColor4f(0.25f, 0.50f, 0.95f, 1.00f);
-  for (const auto& p : sd.particles) {
+  for (const auto& p : sim.particles) {
     if (p.isSupport)
       glVertex2f(p.pos.x, p.pos.y);
   }
@@ -156,7 +165,7 @@ static void drawScale(int index) {
   // Load particles (red)
   glBegin(GL_POINTS);
   glColor4f(0.95f, 0.25f, 0.20f, 1.00f);
-  for (const auto& p : sd.particles) {
+  for (const auto& p : sim.particles) {
     if (p.isLoad)
       glVertex2f(p.pos.x, p.pos.y);
   }
@@ -166,51 +175,70 @@ static void drawScale(int index) {
   glDisable(GL_POINT_SMOOTH);
   glPointSize(1.0f);
 
-  // -- Labels (scale name + particle count) --
+  // -----------------------------------------------------------------------
+  // Labels and legend
+  // -----------------------------------------------------------------------
+  // Scale label: top-left of viewport (well below the window title bar)
   glColor3f(0.95f, 0.95f, 0.95f);
   float labelX = xMin + xRange * 0.02f;
-  float labelY = yCentre + yRange * 0.46f;
+  float labelY = yCentre + yRange * 0.44f;  // near top, with a little margin
   glRasterPos2f(labelX, labelY);
 
-  char buf[64];
-  std::snprintf(buf, sizeof(buf), "%s  (%d particles, %d bonds)",
-    cfg.label,
-    (int)sd.particles.size(),
-    (int)sd.bonds.size());
+  char buf[128];
+  if (sim.fractureFrame >= 0) {
+    std::snprintf(buf, sizeof(buf), "%s (%d p, %d b) Frame:%d [FRACTURE@%d]",
+      cfg.label,
+      (int)sim.particles.size(),
+      (int)sim.bonds.size(),
+      sim.frame,
+      sim.fractureFrame);
+  } else {
+    std::snprintf(buf, sizeof(buf), "%s (%d particles, %d bonds)  Frame: %d",
+      cfg.label,
+      (int)sim.particles.size(),
+      (int)sim.bonds.size(),
+      sim.frame);
+  }
   drawString(buf);
 
-  // -- Legend (small coloured squares + text) --
-  float legX  = xMin + xRange * 0.02f;
-  float legY0 = yCentre - yRange * 0.42f;
-  float legDy = yRange  * 0.04f;
+  // Legend: bottom-left corner, only for the first viewport to avoid clutter
+  if (index == 0) {
+    float legX  = xMin + xRange * 0.02f;
+    // Start legend near the bottom, leaving a small margin
+    float legY0 = yCentre - yRange * 0.42f;   // bottom legend item Y
+    float legDy = yRange  * 0.05f;             // spacing between items
 
-  glPointSize(8.0f);
+    glPointSize(8.0f);
 
-  glBegin(GL_POINTS);
-  glColor3f(0.70f, 0.72f, 0.75f);
-  glVertex2f(legX, legY0);
-  glEnd();
-  glColor3f(0.90f, 0.90f, 0.90f);
-  glRasterPos2f(legX + xRange * 0.025f, legY0 - legDy * 0.1f);
-  drawString("particle");
+    // Regular particle dot
+    glBegin(GL_POINTS);
+    glColor3f(0.70f, 0.72f, 0.75f);
+    glVertex2f(legX, legY0);
+    glEnd();
+    glColor3f(0.90f, 0.90f, 0.90f);
+    glRasterPos2f(legX + xRange * 0.025f, legY0 - legDy * 0.05f);
+    drawString("particle");
 
-  glBegin(GL_POINTS);
-  glColor3f(0.25f, 0.50f, 0.95f);
-  glVertex2f(legX, legY0 + legDy);
-  glEnd();
-  glColor3f(0.90f, 0.90f, 0.90f);
-  glRasterPos2f(legX + xRange * 0.025f, legY0 + legDy * 0.9f);
-  drawString("support (fixed)");
+    // Support dot (one row above)
+    glBegin(GL_POINTS);
+    glColor3f(0.25f, 0.50f, 0.95f);
+    glVertex2f(legX, legY0 + legDy);
+    glEnd();
+    glColor3f(0.90f, 0.90f, 0.90f);
+    glRasterPos2f(legX + xRange * 0.025f, legY0 + legDy * 0.95f);
+    drawString("support (fixed)");
 
-  glBegin(GL_POINTS);
-  glColor3f(0.95f, 0.25f, 0.20f);
-  glVertex2f(legX, legY0 + 2.0f * legDy);
-  glEnd();
-  glColor3f(0.90f, 0.90f, 0.90f);
-  glRasterPos2f(legX + xRange * 0.025f, legY0 + 1.9f * legDy);
-  drawString("load point");
+    // Load dot (two rows above)
+    glBegin(GL_POINTS);
+    glColor3f(0.95f, 0.25f, 0.20f);
+    glVertex2f(legX, legY0 + 2.0f * legDy);
+    glEnd();
+    glColor3f(0.90f, 0.90f, 0.90f);
+    glRasterPos2f(legX + xRange * 0.025f, legY0 + legDy * 1.95f);
+    drawString("load point");
 
-  glPointSize(1.0f);
+    glPointSize(1.0f);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -222,7 +250,6 @@ static void display() {
   glClearColor(0.08f, 0.08f, 0.10f, 1.0f);
   glClear(GL_COLOR_BUFFER_BIT);
 
-  // Draw each scale
   for (int i = 0; i < NUM_SCALES; ++i)
     drawScale(i);
 
@@ -245,52 +272,122 @@ static void display() {
   glEnd();
   glLineWidth(1.0f);
 
-  // Window title text
+  // Window title text (top centre)
   glColor3f(1.0f, 1.0f, 1.0f);
   glRasterPos2f(WIN_W * 0.5f - 200.0f, WIN_H - 18.0f);
   drawString("Implicit BDEM -- Three-Point Bending Scale Consistency (Fig. 5)");
+
+  // Controls hint (bottom centre of full window, pixel coords)
+  glColor3f(0.65f, 0.65f, 0.65f);
+  glRasterPos2f(WIN_W * 0.5f - 140.0f, 4.0f);
+  drawString("SPACE=start/pause  N=step  R=reset  Q/ESC=quit");
 
   glutSwapBuffers();
 }
 
 static void reshape(int w, int h) {
-  // Viewport setup is done per-panel in drawScale(); nothing to do here.
   (void)w; (void)h;
 }
 
+static void resetAll() {
+  for (int i = 0; i < NUM_SCALES; i++) {
+    g_sims[i].init(SCALE_CFG[i], SIM_CFG[i]);
+  }
+  g_running  = false;
+  g_stepOnce = false;
+}
+
 static void keyboard(unsigned char key, int /*x*/, int /*y*/) {
-  if (key == 27 || key == 'q' || key == 'Q') // ESC or Q: quit
-    std::exit(0);
+  switch (key) {
+    case 27:   // ESC
+    case 'q':
+    case 'Q':
+      std::exit(0);
+      break;
+    case ' ':
+      g_running = !g_running;
+      break;
+    case 'n':
+    case 'N':
+      g_stepOnce = true;
+      break;
+    case 'r':
+    case 'R':
+      resetAll();
+      glutPostRedisplay();
+      break;
+    default:
+      break;
+  }
+}
+
+// Timer fires ~60fps; advances simulation when running
+static void timerFunc(int val) {
+  if (g_running) {
+    for (int i = 0; i < NUM_SCALES; i++)
+      g_sims[i].step();
+    glutPostRedisplay();
+  } else if (g_stepOnce) {
+    for (int i = 0; i < NUM_SCALES; i++)
+      g_sims[i].step();
+    g_stepOnce = false;
+    glutPostRedisplay();
+  }
+  glutTimerFunc(16, timerFunc, val);
 }
 
 // ---------------------------------------------------------------------------
 // Initialisation
 // ---------------------------------------------------------------------------
 
-static void initScales() {
+static void initSimulations() {
   for (int i = 0; i < NUM_SCALES; ++i) {
-    ScaleData& sd = g_scales[i];
-    sd.cfg = SCALE_CFG[i];
-
-    std::printf("Generating scale %d (%s) r=%.4f ...\n",
-      i, sd.cfg.label, sd.cfg.r);
-
-    sd.particles = generateBeam(sd.cfg);
-    tagBoundaryParticles(sd.particles, sd.cfg);
-    sd.bonds     = generateBonds(sd.particles);
-
+    std::printf("Initialising scale %d (%s) r=%.4f ...\n",
+      i, SCALE_CFG[i].label, SCALE_CFG[i].r);
+    g_sims[i].init(SCALE_CFG[i], SIM_CFG[i]);
     std::printf("  particles: %d   bonds: %d\n",
-      (int)sd.particles.size(), (int)sd.bonds.size());
+      (int)g_sims[i].particles.size(),
+      (int)g_sims[i].bonds.size());
   }
   std::printf("Initialisation complete.\n");
-  std::printf("Press ESC or Q to quit.\n");
+  std::printf("Press SPACE to start simulation, N to step, R to reset, Q/ESC to quit.\n");
 }
 
 // ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
 
+// Headless mode: run simulation for N frames and report fracture, then exit.
+static void runHeadless(int maxFrames) {
+  initSimulations();
+  std::printf("Running headless for %d frames...\n", maxFrames);
+  for (int f = 0; f < maxFrames; f++) {
+    for (int i = 0; i < NUM_SCALES; i++)
+      g_sims[i].step();
+    for (int i = 0; i < NUM_SCALES; i++) {
+      if (g_sims[i].fractureFrame == f)
+        std::printf("  [Frame %3d] Scale %-7s FRACTURE\n", f, SCALE_CFG[i].label);
+    }
+  }
+  for (int i = 0; i < NUM_SCALES; i++) {
+    std::printf("Scale %-7s : fracture at frame %d  (total frames=%d)\n",
+      SCALE_CFG[i].label,
+      g_sims[i].fractureFrame,
+      g_sims[i].frame);
+  }
+}
+
 int main(int argc, char** argv) {
+  // -headless [N]: run without window, print fracture frames, exit
+  for (int a = 1; a < argc; a++) {
+    std::string arg(argv[a]);
+    if (arg == "-headless" || arg == "--headless") {
+      int frames = (a + 1 < argc) ? std::atoi(argv[a + 1]) : 60;
+      runHeadless(frames);
+      return 0;
+    }
+  }
+
   glutInit(&argc, argv);
   glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
   glutInitWindowSize(WIN_W, WIN_H);
@@ -300,8 +397,9 @@ int main(int argc, char** argv) {
   glutDisplayFunc(display);
   glutReshapeFunc(reshape);
   glutKeyboardFunc(keyboard);
+  glutTimerFunc(16, timerFunc, 0);
 
-  initScales();
+  initSimulations();
 
   glutMainLoop();
   return 0;
