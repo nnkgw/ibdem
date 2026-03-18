@@ -1,0 +1,2270 @@
+=== PAGE 1 ===
+.
+.
+Latest updates: hps://dl.acm.org/doi/10.1145/3711852
+.
+.
+RESEARCH-ARTICLE
+Implicit Bonded Discrete Element Method with Manifold Optimization
+JIA-MING LU, Beijing National Research Center for Information Science and Technology,
+Beijing, China
+.
+GENG-CHEN CAO, Beijing National Research Center for Information Science and Technology,
+Beijing, China
+.
+CHENFENG LI
+.
+SHI-MIN HU, Beijing National Research Center for Information Science and Technology,
+Beijing, China
+.
+.
+.
+Open Access Support provided by:
+.
+Beijing National Research Center for Information Science and Technology
+.
+PDF Download
+3711852.pdf
+27 February 2026
+Total Citations: 1
+Total Downloads: 747
+.
+.
+Published: 28 January 2025
+Online AM: 09 January 2025
+Accepted: 12 December 2024
+Revised: 15 October 2024
+Received: 21 August 2023
+.
+.
+Citation in BibTeX format
+.
+.
+ACM Transactions on Graphics, Volume 44, Issue 1 (February 2025)
+hps://doi.org/10.1145/3711852
+EISSN: 1557-7368
+.
+
+=== PAGE 2 ===
+Implicit Bonded Discrete Element Method with Manifold Optimization
+JIA-MING LU, BNRist, Department of Computer Science and Technology, Tsinghua University, Beijing, China
+GENG-CHEN CAO, BNRist, Department of Computer Science and Technology, Tsinghua University, Beijing, China
+CHENFENG LI, Zienkiewicz Institute for Modelling, Data and AI, Swansea University Bay Campus, Swansea, United
+Kingdom of Great Britain and Northern Ireland
+SHI-MIN HU, BNRist, Department of Computer Science and Technology, Tsinghua University, Beijing, China
+Fig. 1. (a) A ceramic plate dropped on a hard floor and broken into pieces. Our simulation captures a great level of details using only 219K particles, with
+a 2.4x speedup over the state-of-the-art method. (b) A piece of knitted fabric being torn apart, demonstrating our algorithm’s ability to handle extreme
+deformations and material failure in textiles, with a 3.3x speedup over the state-of-the-art method.
+This article proposes a novel simulation approach that combines im-
+plicit integration with the Bonded Discrete Element Method (BDEM) to
+achieve faster, more stable, and more accurate fracture simulation. The
+new method leverages the efficiency of implicit schemes in dynamic sim-
+ulation and the versatility of BDEM in fracture modeling. Specifically, an
+optimization-based integrator for BDEM is introduced and combined with
+a manifold optimization approach to accelerate the solution process of
+the quaternion-constrained system. Our comparative experiments indicate
+that our method offers better scale consistency and more realistic colli-
+sion effects than finite element method and material point method frag-
+Authors’ Contact Information: Jia-Ming Lu, BNRist, Department of Computer Science
+and Technology, Tsinghua University, Beijing, Beijing, China; e-mail: jaimeyzzz@
+outlook.com; Geng-Chen Cao, BNRist, Department of Computer Science and Technol-
+ogy, Tsinghua University, Beijing, Beijing, China; e-mail: cgc21@mails.tsinghua.edu.
+cn; Chenfeng Li, Zienkiewicz Institute for Modelling, Data and AI, Swansea Univer-
+sity Bay Campus, Swansea, United Kingdom of Great Britain and Northern Ireland; e-
+mail: c.f.li@swansea.ac.uk; Shi-min Hu, BNRist, Department of Computer Science and
+Technology, Tsinghua University, Beijing, China; e-mail: shimin@tsinghua.edu.cn.
+Permission to make digital or hard copies of all or part of this work for personal or
+classroom use is granted without fee provided that copies are not made or distributed
+for profit or commercial advantage and that copies bear this notice and the full cita-
+tion on the first page. Copyrights for components of this work owned by others than
+the author(s) must be honored. Abstracting with credit is permitted. To copy other-
+wise, or republish, to post on servers or to redistribute to lists, requires prior specific
+permission and/or a fee. Request permissions from permissions@acm.org.
+© 2025 Copyright held by the owner/author(s). Publication rights licensed to ACM.
+ACM 0730-0301/2025/01-ART9
+https://doi.org/10.1145/3711852
+mentation approaches. Additionally, our method achieves a computational
+speedup of 2.1 to 9.8 times over explicit BDEM methods.
+CCS Concepts: • Computing methodologies →Physical simulation;
+Additional Key Words and Phrases: Discrete element method, fracture sim-
+ulation, optimization-based integrator, manifold optimization
+ACM Reference Format:
+Jia-Ming Lu, Geng-Chen Cao, Chenfeng Li, and Shi-min Hu. 2025.
+Implicit Bonded Discrete Element Method with Manifold Optimiza-
+tion. ACM Trans. Graph. 44, 1, Article 9 (January 2025), 17 pages.
+https://doi.org/10.1145/3711852
+1
+Introduction
+Fracture and damage occur to all materials, and they represent a
+fundamental type of interaction in virtual environments (Figure 1).
+As an important topic in physics-based simulation, fracture mod-
+eling is a challenging task due to the complex underlying physical
+processes. The ubiquity of fractures in real life sets a high standard
+for plausible results to satisfy human perception. To date, most sim-
+ulation methods for materials are based on the continuum theory,
+which have limited capacity in capturing fracture phenomena. The
+Bonded Discrete Element Method (BDEM) can better simulate
+fractures [Lu et al. 2021]. One of the most significant challenges
+in fracture simulation is keeping the error of internal forces under
+control while allowing an acceptable error rate in fracture prop-
+agation. For simulation methods based on the continuum theory,
+the accuracy in stresses is typically much poorer than the accuracy
+ACM Trans. Graph., Vol. 44, No. 1, Article 9. Publication date: January 2025.
+
+=== PAGE 3 ===
+9:2
+•
+J.-M. Lu et al.
+in displacements, making it hard if not impossible to manage the
+simulation error during fracture propagation. The BDEM does not
+have this limitation, as its stress and displacement are not hard-
+wired through differential operators.
+However, solving BDEM systems is complicated by the stiff na-
+ture of the unit length constraint in quaternion systems, and it
+becomes more challenging for such materials as rope and cloth
+due to the added complexity of shear stiffness. The collision stiff-
+ness in discrete element simulations is another major challenge,
+as it can significantly increase the number of Newton iterations
+required. These issues are prevalent and well recognized in BDEM
+simulations [André et al. 2012; Nguyen et al. 2021]. Implicit inte-
+grators are widely used in computer graphics to accelerate the effi-
+ciency of dynamic simulations, where the backward Euler scheme
+is the most prevalent method [Baraff and Witkin 1998; Hirota et al.
+2001; Liu et al. 2013; Martin et al. 2011; Volino and Magnenat-
+Thalmann 2001]. Other integrators, such as the implicit-explicit
+method [Eberhardt et al. 2000; Stern and Grinspun 2009] and ex-
+ponential integrators [Chen et al. 2017; Michels et al. 2014], have
+also received significant attention. Recent work used a variational
+integrator to model the inter-granule contact [De Klerk et al. 2022].
+However, none of these well-established implicit schemes is effec-
+tive for BDEM.
+To address this challenge, we introduce an optimization-based
+integrator to reformulate BDEM and combine it with a manifold
+optimization approach to deliver faster, more stable, and more ac-
+curate fracture simulations. Our approach leverages the strength
+of BDEM in fracture modeling while achieving superior computa-
+tional efficiency with the resulting implicit solution scheme. Our
+experiments show that without loss of accuracy, the proposed ap-
+proach is more efficient than explicit BDEM methods. The main
+contributions include the following:
+— A stable optimization-based integrator suitable for implicit
+BDEM is formulated, and it allows large timesteps.
+— A manifold optimization approach for BDEM is introduced
+to speed up the solution of quaternion-constrained systems.
+The rest of the article is organized as follows. Section 2 briefly
+recaps related works in fracture simulation and the Discrete El-
+ement Method (DEM). The main body of work is presented
+in Section 3 and Section 4, which respectively present the
+optimization-based integration for BDEM and the manifold opti-
+mization approach to accelerate the solution process. More imple-
+mentation details are provided in Section 5, followed by results and
+discussions in Section 6. Finally, concluding remarks are made in
+Section 7.
+2
+Related Works
+Fracture Simulation. Fracture simulation is an important topic in
+computer graphics, owing to the ubiquity of fracture phenomena
+in real life. A number of non-physical methods have been proposed
+to produce crack patterns [Bao et al. 2007; Hellrung et al. 2009;
+Müller et al. 2013; Raghavachary 2002; Schvartzman and Otaduy
+2014; Su et al. 2009; Zheng and James 2010], whereas physics-based
+methods are more accurate and have become the preferred ap-
+proach for fracture simulation. Until recently, the Finite Element
+Method (FEM) is the most widely used physics-based technique
+for fracture simulation [Koschier et al. 2014; Müller et al. 2001;
+O’Brien and Hodgins 1999; Pfaff et al. 2014; Wicke et al. 2010].
+Other physics-based methods include XFEM (eXtended FEM) [Chi-
+talu et al. 2020; Kaufmann et al. 2009], the Boundary Element
+Method (BEM) [Hahn and Wojtan 2015, 2016; Zhu et al. 2015],
+the mesh-less method [Pauly et al. 2005], peridynamics [Chen et al.
+2018], and the Material Point Method (MPM) [Fan et al. 2022;
+Wolper et al. 2020, 2019]. Each of these methods has its own pros
+and cons and is suitable for different fracture scenarios. Besides
+addressing underlying physics, accurately capturing fracture sur-
+faces is crucial for realistic visual effects in fracture propagation.
+For FEM fracture simulation, methods like adaptive remeshing
+[Chen et al. 2014; Koschier et al. 2014; Pfaff et al. 2014; Wicke et al.
+2010], duplicate elements [Molino et al. 2004], and sub-elements
+[Nesme et al. 2009; Wojtan and Turk 2008] are employed to cap-
+ture and prevent poor-quality elements. Explicit surface methods
+[Koschier et al. 2017], post-processing techniques [Chitalu et al.
+2020; Kaufmann et al. 2009; Wang et al. 2019], level-set meth-
+ods [Hahn and Wojtan 2015], and mesh-based methods [Chitalu
+et al. 2020; Sifakis et al. 2007; Zhu et al. 2015] offer alternative ap-
+proaches for accurately representing fracture surfaces.
+Discrete Element Methods. Introduced by Cundall and Strack
+for solving problems in rock mechanics [Cundall 1971; Cun-
+dall and Strack 1979], DEM is widely used in engineering for
+modeling granular materials. The DEM has also been adopted
+in computer graphics for visual effects involving granules and
+particles [Alduán et al. 2009; Bell et al. 2005; Rungjiratananon et al.
+2008; Yue et al. 2018]. To simulate continuum media, Potyondy
+and Cundall [2004] extended the DEM to form the BDEM, and
+since then it has seen growing adoption in various engineering
+applications. Examples include the work of André et al. [2012],
+where a cohesive bond model was used to represent continuum
+objects, and the work of Nguyen et al. [2021], where a plastic
+cohesive bond was used to simulate ductile fractures. The BDEM
+was introduced to the computer graphics community in prior
+work [Lu et al. 2021], and it was proven to be robust and flexible
+for producing realistic visual effects involving fractures. As far
+as plausible visual effects are concerned, the main limitation of
+BDEM fracture simulation is its computational efficiency, due to
+the need for small timesteps in the simulation.
+Simulation with Rotation. Different from FEM, where the de-
+grees of freedom of motion are defined on a set of points/nodes
+and include only translations, the degrees of freedom for DEM are
+defined on rigid spheres, which include both translational and ro-
+tational degrees of freedom. The explicit inclusion of rotation as
+part of element states is a major advantage for DEMs to represent
+the deformation and motion of real-world objects. There are other
+methods that also explicitly account for the rotational motion. A
+prominent and well-established category within this domain is
+the simulation of rigid body motion, which has been subjected
+to extensive exploration for several decades [Baraff 1989; Bender
+et al. 2014; Hahn 1988; Stewart 2000]. Recent endeavors in rigid
+body simulation include the employment of the extended posi-
+tion based dynamics method for solving the motion of rigid bodies
+[Müller et al. 2020], differentiable rigid contact models [Geilinger
+et al. 2020], and the modeling of rigid body motion and colli-
+sion resolution through the formulation of incremental potential
+ACM Trans. Graph., Vol. 44, No. 1, Article 9. Publication date: January 2025.
+
+=== PAGE 4 ===
+Implicit Bonded Discrete Element Method with Manifold Optimization
+•
+9:3
+[Ferguson et al. 2021]. Certainly, in addition to rigid body simula-
+tions, the incorporation of rotation as a degree of freedom is also
+utilized in various other methods. One such method uses parti-
+cles with orientation [Müller and Chentanez 2011], but this geo-
+metric approach does not capture basic physical concepts such as
+momentum and stress, which can limit its ability in producing re-
+alistic visual effects. Another example is rod elements for model-
+ing slender objects. The discrete elastic rod approach [Bergou et al.
+2008] was used to compute rod curvature, whereas Cosserat rods
+were used in the work of Kugelstadt and Schömer [2016] and Soler
+et al. [2018] to model complex bending and torsion effects. The rod
+elements approach is effective for slender and flexible structures,
+such as ropes and fibers, but they are less effective for simulating
+generic objects.
+Optimization-Based Integrator. In physics-based simulations,
+the resolution of complex nonlinear equations is often required,
+which can lead to inefficient and unstable solutions due to their in-
+herent complexity. An integrator based on energy optimization is
+a method designed to enhance the efficiency and stability of solv-
+ing nonlinear equations. This approach has been applied to var-
+ious types of computational problems, including fluid dynamics
+[Weiler et al. 2016], crowd simulation [Karamouzas et al. 2017],
+and elastic bodies [Fratarcangeli et al. 2016; Gast et al. 2015; Mar-
+tin et al. 2011; Wang and Yang 2016] and nonlinear materials [Kee
+et al. 2023; Li et al. 2019; Löschner et al. 2020]. Projective dynamics
+represent a class of optimization-based methods for solving con-
+strained systems, capable of rapidly resolving a diverse array of
+materials [Bouaziz et al. 2014; Liu et al. 2013, 2016; Narain et al.
+2016; Weiler et al. 2016]. Incremental potential is also a class of
+methods based on energy optimization, which has recently been
+employed to handle collisions between various objects [Ferguson
+et al. 2021; Lan et al. 2021; Li et al. 2020a, b]. By introducing the
+interior point method to resolve impacts, it consistently achieves
+interpenetration-free outcomes. In our work, akin to the approach
+presented by Ferguson et al. [2021], we have derived an integrator
+with rotational degrees of freedom in an energy-optimized form.
+In contrast to the complex formulation originally targeted at rigid
+body simulation, our integrator has been specifically tailored for
+the BDEM system, resulting in a significantly streamlined solution
+that achieves efficient computation.
+3
+Implicit BDEM
+A significant difference between BDEM and other approaches is
+the direct consideration of rotational degrees of freedom as sys-
+tem variables. Previous methods solve BDEM systems using ex-
+plicit formulations that store rotation status as quaternions, Euler
+angles or axis angles, and compute torques and angular velocities
+explicitly to alter the rotation status of discrete elements. In im-
+plicit formulations, position and rotation states cannot be explic-
+itly updated, and forces or torques are often implicit or invisible
+during the solution process. To form an implicit BDEM scheme, it
+requires a different formulation.
+Solving generic nonlinear equations are unstable, and a promis-
+ing strategy to tackle this challenge is transforming the nonlinear
+simulation problem into a nonlinear optimization problem that is
+easier to solve [Gast et al. 2015]. Optimization-based integrators
+are effective in improving the stability and convergence speed of
+nonlinear solution processes. Considering the BDEM system, a di-
+rect idea is that we formulate the solution of motion equations with
+rotational degrees of freedom into an energy minimization form to
+achieve a fast and stable integrator. In conventional rigid body so-
+lutions, due to the introduction of rotational degrees of freedom,
+the mass matrix M in the extended motion equations is varies with
+the motion state [Geilinger et al. 2020; Liu and Jain 2012]. There-
+fore, we cannot directly write the extended motion equations in
+the form of energy minimization. In pursuit of an improved solu-
+tion form, akin to the approach detailed in the work of Kane et al.
+[2000], we have re-derived the motion equation for BDEM based
+on quaternions. We have discovered that, leveraging the inherent
+characteristics of BDEM, we can ultimately arrive at an exceed-
+ingly succinct formulation for optimization-based integrator.
+3.1
+Optimization-Based Integrator
+Building upon Hamiltonian mechanics for quaternion-based rigid
+body dynamics, we present a simplified computational framework
+for BDEM simulations of spherical particles. Our key contribution
+is the derivation of a constant mass matrix formulation that main-
+tains solution convergence while eliminating the need for rotation
+state-dependent mass matrices. The complete mathematical foun-
+dation is presented in Appendix C. Our formulation yields a block-
+diagonal extended mass matrix Ms:
+Ms =
+mI3
+8
+5mr2I4
+
+,
+(1)
+where m is the particle mass, r is the sphere radius, and I3 and I4
+are identity matrices of dimensions 3 and 4, respectively.
+This constant mass matrix enables us to express the dynamics as
+a discrete variational principle, leading to the following optimiza-
+tion formulation:
+Φ(xi+1) =
+1
+2Δt2 (xi+1 −ˆz)T Ms(xi+1 −ˆz) + V
+xi+1 + xi
+2
+
+,
+(2)
+where Δt is the timestep size, xi represents the system state at
+timestep i (including both position and quaternion components),
+and V denotes the potential energy. The auxiliary variables ˆx and
+ˆz are defined as
+ˆx = 2xi −xi−1
+ˆz = ˆx −1
+2M−1
+s Δt2∇V
+xi−1 + xi
+2
+
+.
+(3)
+These variables are computed from known states at previous
+timesteps. The system evolution is then determined by solving the
+constrained optimization problem:
+xi+1 = arg min
+x
+Φ(x)
+s.t.
+C(x) = 0,
+(4)
+where C(x) represents the quaternion unit length constraint (see
+Appendix A). This variational integrator, a symplectic integrator
+with second-order accuracy, is now ready for our simulation and
+compatible with our following manifold optimization approach.
+However, to further reduce computational costs, we introduce an
+approximation in our experiments to trade off the computational
+speed and simulation accuracy. We approximate both ∇V ( xi+1+xi
+2
+)
+and ∇V ( xi−1+xi
+2
+) with ∇V (xi+1). This approximation, while reduc-
+ing the integrator to first-order accuracy, maintains compatibility
+ACM Trans. Graph., Vol. 44, No. 1, Article 9. Publication date: January 2025.
+
+=== PAGE 5 ===
+9:4
+•
+J.-M. Lu et al.
+Fig. 2. The experimental results of our method on a chocolate drop impact simulation. The figure illustrates the moment when a chocolate drop hits the
+ground and cracks into several pieces and small fragments. The simulation shows the effectiveness of our approach in accurately modeling high-speed
+object collisions and fracture phenomena.
+with our manifold optimization approach. Empirical comparisons
+reveal that the primary drawback is slightly increased damping, a
+tradeoff for improved computational efficiency. The modified form,
+similar to the implicit Euler method, is as follows:
+1
+Δt2 Ms(xi+1 −ˆx) + ∇V (xi+1) = 0,
+(5)
+with the corresponding objective function,
+Φ(xi+1) =
+1
+2Δt2 (xi+1 −ˆx)T Ms(xi+1 −ˆx) + V (xi+1).
+(6)
+Note that this formulation bears a striking resemblance to its
+counterpart without rotational degrees of freedom. This similarity
+might raise questions about the treatment of rotation-related
+terms. To address this potential source of confusion and pro-
+vide a comprehensive understanding, we present an alternative
+derivation with a detailed exposition of the rotational dynamics
+in Appendix B.
+3.2
+Potential Energy in BDEM
+Now we require only the specification of a potential function to
+solve the BDEM system. In a setup where two vertices xi={pi,qi }
+and xj={pj,qj } are bonded together, the deformation of the bond
+can be decomposed into four forms: stretch, shear, bend, and twist,
+akin to the form presented in our prior work [Lu et al. 2021]. It is
+straightforward to derive the bond energy with these four defor-
+mation types:
+V = Vstretch + Vshear + Vbendtwist.
+(7)
+Stretch. The stretch energy of a bond can be modeled using a
+simple spring model and expressed as follows:
+Vstretch = 1
+2kn(∥pi −pj ∥−l0)2,
+(8)
+where kn = ES
+l0 , l0 is the original bond length, E is Young’s mod-
+ulus, and S is the bond’s cross-sectional area, with S = π( ri+rj
+2
+)2,
+using the radii ri and rj of two bonded elements.
+Shear. The rotation of two elements can be decomposed into a
+common rotational component and a differential rotational compo-
+nent. As elucidated in prior work [Lu et al. 2021], the shear energy
+is modeled by the variation of the common rotational component
+relative to the rest state of the bond. To extract the common rota-
+tion, the equationqc = (qi +qj)/∥qi +qj ∥is used, whered = qc ⊙d0
+represents the current direction. The corresponding energy can be
+expressed as
+Vshear = 1
+2ktθ2,
+(9)
+where θ =
+
+d0,dq
+
+denotes the angle between the bond’s initial
+direction d0 and current direction d. The shear stiffness is kt =
+GS/l0, where G represents the material’s shear modulus.
+Bend and Twist. The bend and twist energy of discrete elements
+can be defined as the difference in their rotational component. It is
+important to note that the stiffness of bend and twist have distinct
+relationships with material properties, thus requiring separate de-
+composition of the two types of rotations. The difference of quater-
+nion, expressed in the form of Gl(qj)qi, can be transformed to the
+local frame via the rotation matrix R0 = Gl(q0)Gr (q0), where q0
+is the rotation between d0 and {1, 0, 0}. The resulting vector can
+then be represented as t = R0Gl(qj)qi. With the aid of the stretch
+and shear stiffness matrix denoted as K, the energy form can be
+expressed using
+Vbendtwist = 1
+2tT Kt.
+(10)
+The stiffness matrix is defined by
+K = 1
+l0
+	
+
+GJ
+EI
+EI
+
+
+,
+(11)
+where I = πr4
+0/4 and J = πr4
+0/2 are the second moments of area
+for bending and twisting, respectively.
+3.3
+Fracture Criteria
+In our prior study [Lu et al. 2021], the tensile and shear stresses
+within the bond in BDEM are calculated as follows:
+σ = ∥Fn∥
+S
++ ∥Mb ∥r0
+I
+(12)
+τ = ∥Fs ∥
+S
++ ∥Mt ∥r0
+J
+,
+(13)
+where Fn and Fs represent the normal and shear forces acting
+on the bond, respectively. The quantities |Mb | and |Mt | indicate
+the magnitudes of the bending moments about the bond’s normal
+and transverse axes, respectively, and S, I, and J denote the cross-
+sectional area, second moment of area, and polar moment of area of
+the bond’s cross section, respectively. If the stress within the bond
+exceeds the respective strengths, i.e., σ > σc or τ > τc with σc and
+τc representing the tensile and shear strengths, the bond breaks.
+ACM Trans. Graph., Vol. 44, No. 1, Article 9. Publication date: January 2025.
+
+=== PAGE 6 ===
+Implicit Bonded Discrete Element Method with Manifold Optimization
+•
+9:5
+Fig. 3. A ceramic plate dropped on a hard floor and broken into pieces. Our simulation captures highly detailed fractures using only 219K particles, with a
+2.4x speedup over the state-of-the-art method.
+In the explicit method, forces and torques are calculated directly,
+thus allowing the aforementioned fracture criteria to be readily
+computed. For our implicit method, where forces and torques are
+not computed directly, in order to employ the same fracture crite-
+ria, it is necessary to calculate the forces within the implicit setting.
+To achieve this, we have utilized the following equations:
+Fn = ∇pVstretch
+(14)
+Fs = ∇pVshear
+(15)
+∥Mb ∥= ∥⟨Kt,e1⟩e1 + ⟨Kt,e2⟩e2∥
+(16)
+∥Mt ∥= ∥⟨Kt,e0⟩e0∥,
+(17)
+where K and t represent the stiffness matrix and rotation vector in
+the bending and twisting potential equation given by Equation (10).
+In our experiments, we have found that this approach works effec-
+tively, yielding results that are nearly identical to those produced
+by the explicit method.
+3.4
+Element Packing
+In the domain of discrete element simulations, the concept of pack-
+ing is analogous to the discretization process in continuum meth-
+ods. Common packing techniques employed in discrete element
+simulations include random close packing and hexagonal close
+packing. For engineering applications that aim to accurately simu-
+late material properties, random close packing combined with cal-
+ibration is a frequently utilized approach. For the sake of simplic-
+ity in our application, we have employed hexagonal close packing.
+Our experiments have revealed that even with this most basic pack-
+ing method, it is possible to effectively capture rich fracture details
+without introducing visually discernible artifacts that might result
+from overly regular patterns.
+4
+Manifold Optimization
+The preceding optimization approach generally improves the
+solution stability, but to solve it efficiently remains a challenge
+due to the quaternion constraint in Equation (54). Our experi-
+ments have revealed that traditional methods such as the penalty
+method and the Lagrange multiplier method perform poorly. In
+this work, we present a manifold optimization scheme, where the
+quaternion constraint is represented as a hypersphere enabling
+more effective optimization search on a manifold. Experimental
+results demonstrate that our new approach significantly improves
+the efficiency and accuracy of the BDEM solution compared to
+previous methods.
+The manifold optimization approach [Boumal 2023] replaces
+the constrained optimization problem on Rn with an uncon-
+strained optimization problem on a specific manifold M. In our
+approach, we utilize the second-order manifold optimization and
+employ a nullspace operator to further reduce the number of
+unknowns in the system. To better explain this solution process,
+we also introduce the first-order manifold optimization and
+compare its performance with our more advanced approach. To
+facilitate subsequent discussions, we establish specific nomen-
+clature to differentiate functions defined on the full space from
+those on the manifold. The objective function is represented as
+¯f in the original Euclidean space and as f in the new manifold
+M, such that ¯f |M = f . In our scenario, the manifold is defined
+as M = n
+i=1 R3 ⊗S3, where n denotes the number of particles.
+Additionally, grad f and Hess f refer to the gradient and Hessian
+in the manifold space, whereas grad ¯f and Hess ¯f pertain to the
+gradient and Hessian in the full space. The subscript p denotes
+the R3 space, and the subscript q denotes the S3 space.
+4.1
+First-Order Manifold Optimization
+ALGORITHM 1: First-Order Manifold Optimization
+Require: Initial guess x0, termination threshold ϵ
+1: while true do
+2:
+Compute the grad f (xk) on the manifold M.
+3:
+if ∥grad f (xk)∥< ϵ then
+4:
+return xk ∈M
+5:
+end if
+6:
+Use descent direction −grad f (xk) with manifold line
+search step α to update xk+1 ←xk −α grad f (xk) on the
+manifold M.
+7:
+Project xk+1 to the manifold M.
+8:
+k ←k + 1
+9: end while
+The first-order manifold optimization process is outlined in Algo-
+rithm 1. It closely parallels standard gradient-based optimization
+methods but incorporates specific adjustments to align with the
+manifold.
+In Line 2, the gradient computation in manifold optimization
+involves a manifold tangent projection in comparison to standard
+gradient computation. Specifically, for our quaternion constraint,
+ACM Trans. Graph., Vol. 44, No. 1, Article 9. Publication date: January 2025.
+
+=== PAGE 7 ===
+9:6
+•
+J.-M. Lu et al.
+Fig. 4. This scene illustrates the simulation of a woven fabric undergoing progressive stretching and eventual rupture using our method. With only 165K
+particles, our approach effectively captures the realistic behavior of yarn-level cloth and the phenomenon of fabric tearing, demonstrating a convincing
+rupture process and rich details at the tear propagation. Compared to current explicit methods, our technique achieves a threefold acceleration.
+the gradient grad f is calculated as
+gradp f = gradp ¯f
+(18)
+gradq f = (I −qqT ) gradq ¯f ,
+(19)
+where the subscript p refers to the R3 space and the subscript q
+refers to the S3 space.
+Line 6 is analogous to the line search and stepping procedures
+within standard gradient-based optimization. In standard gradient-
+based optimization, we employ direct addition to perform line
+searches and steps, which may lead to the system’s state leaving
+the manifold. In contrast, manifold optimization requires that the
+corresponding line search and stepping be conducted on the man-
+ifold, ensuring that every step within the search and step progres-
+sion adheres to the constraints of the manifold. In particular, for
+our quaternion constraints, once the descent direction is known,
+we can ensure that the search and stepping remain on the mani-
+fold by employing a line search along a geodesic on S3. For ele-
+ment i with position pi and rotation qi, with a fast descent direc-
+tion Δpi = −gradi
+p f , Δqi = −gradi
+q f , and step α, the stepping
+on quaternion manifold is computed by
+pinew = pi + αΔpi
+(20)
+qinew = qi cos ∥αΔqi ∥+
+αΔqi
+∥αΔqi ∥sin ∥αΔqi ∥.
+(21)
+In the line search procedure, this approach is adopted for the incre-
+mental search of the system state. This same method is also applied
+during the final iterative update step.
+In Line 7, the q vector is guaranteed to lie on the manifold
+through a normalization step. This step can be regarded as a man-
+ifold projection and is given by
+qi
+k ←
+qi
+k
+∥qi
+k ∥.
+(22)
+It ensures that q satisfies the manifold constraint, allowing the op-
+timization process to proceed effectively.
+4.2
+Second-Order Manifold Optimization
+The second-order manifold optimization takes into account the
+Hessian and gradient of the objective function f (x) on the man-
+ifold M, and the algorithm steps are summarized in Algorithm 2.
+ALGORITHM 2: Second-Order Manifold Optimization
+Require: Initial guess x0, termination threshold ϵ
+1: while true do
+2:
+Compute the grad f (xk) on the manifold M.
+3:
+if ∥grad f (xk)∥< ϵ then
+4:
+return xk ∈M
+5:
+end if
+6:
+Compute Hess f (xk) on the manifold M.
+7:
+Solve (Hess f (xk))Δx = grad f (xk) in tangent space TM.
+8:
+Use descent direction Δx with manifold line search step α
+to update xk+1 ←xk + αΔx on the manifold M.
+9:
+Project xk+1 to the manifold M.
+10:
+k ←k + 1
+11: end while
+The computation of Hess f in Line 6 is performed using Propo-
+sition 5.8 in the work of Boumal [2023], and the procedure is sum-
+marized next:
+Hesspi,pj f = Hesspi,pj ¯f
+(23)
+Hesspi,qj f = Hesspi,qj ¯f (I −qjqT
+j )
+(24)
+Hessqi,pj f = (I −qiqT
+i ) Hessqi,pj ¯f
+(25)
+Hessqi,qj f = (I −qiqT
+i ) Hessqi,qj ¯f (I −qjqT
+j )
+(26)
++
+
+0
+i  j
+−qT
+i (gradqi ¯f )(I −qiqT
+i )
+i = j .
+(27)
+The symmetric nature of Hess f allows us to solve the large
+sparse system using the commonly used preconditioned conjugate
+gradient method. With manifold optimization, the constrained op-
+timization problem is transformed into an unconstrained problem.
+Even so, the unknowns of the system are still more than the true
+degrees of freedom of the physical system. To overcome this is-
+sue, we use the nullspace operator. Note that both the gradient
+project operator P(q) = I −qqT and the nullspace operator G(q)
+have the similar property P(q)q = 0 and G(q)q = 0 (detailed in-
+troductions to these two operators are provided in Appendix A).
+Here we use H = Hess f and b = grad f as shorthand nota-
+tion. The original second-order solution formulation for rotation
+ACM Trans. Graph., Vol. 44, No. 1, Article 9. Publication date: January 2025.
+
+=== PAGE 8 ===
+Implicit Bonded Discrete Element Method with Manifold Optimization
+•
+9:7
+(I −qqT )H(I −qqT )Δx = (I −qqT )b is reformulated as
+G(q)TG(q)H(G(q)TG(q))Δx = G(q)TG(q)b.
+(28)
+By defining y = G(q)Δx and z = G(q)b, the original solution is
+transformed to
+G(q)HG(q)Ty = z.
+(29)
+The solution can then be expressed as Δx = G(q)Ty. This approach
+reduces the number of unknowns in the system to the degrees of
+freedom of the BDEM system and improves the solution efficiency.
+5
+Implementation Details
+The utilization of optimization-based integrator formulation and
+manifold optimization helps to develop an unconditionally sta-
+ble integrator suited for implicit BDEM simulation with large
+timesteps. The simulation workflow is summarized in Algorithm 3,
+and the implementation details are explained in the following sub-
+sections. The proposed methodology significantly improves the
+stability and efficiency of BDEM simulations, enabling them to
+tackle complex and computationally demanding scenes.
+ALGORITHM 3: Stable Integrator
+Require: timestep Δt, termination threshold ϵ
+1: k ←0
+2: Initial guess x0 ←xn + vnΔt
+3: while true do
+4:
+Compute the grad f (xk) on the manifold M
+5:
+if ∥grad f (xk)∥< ϵ then
+6:
+xk+1 ←xk
+7:
+break
+8:
+end if
+9:
+Compute Hess f (xk) on the manifold M
+10:
+Project Hess f (xk) to semi-positive definite Hess
+′ f (xk)
+11:
+Compute relative error ϵr
+12:
+Solve (Hess
+′ f (xk))Δx = −grad f (xk) in tangent space TM
+with preconditioned conjugate gradient method with rela-
+tive error ϵr
+13:
+Use descent direction Δx with manifold line search step α
+to update xk+1 ←xk + αΔx on the manifold M.
+14:
+Project xk+1 to the manifold M.
+15:
+k ←k + 1
+16: end while
+17: xn+1 ←xk+1.
+18: vn+1 ←
+1
+Δt (xn+1 −xn)
+19: Project vn+1 to friction cone
+20: Update bond state with xn+1
+5.1
+Timestep Selection
+In our research, the selection of timesteps for both implicit and ex-
+plicit simulations requires careful consideration. For explicit simu-
+lations, we must choose a timestep that is sufficiently large to per-
+mit a reasonable comparison of efficiency. Regarding implicit simu-
+lations, the timestep should be sufficiently increased to ensure sig-
+nificant performance acceleration without excessively compromis-
+ing the realism of the fragmentation effects. Taking into account
+these factors, we have followed the approach established in explicit
+BDEM for estimating the system’s period to inform our choice of
+an appropriate timestep. In our prior work [Lu et al. 2021], the ap-
+propriate timestep is ascertained by analyzing the system’s period
+T, which correlates with the system’s largest eigenvalue λ as delin-
+eated by the equation T = 2/
+√
+λ. The largest eigenvalue λ of the
+system is calculated using the expression
+λ = k
+m N,
+(30)
+where m denotes the effective mass, k signifies the stiffness coeffi-
+cient, and N corresponds to the maximum eigenvalue of the Lapla-
+cian matrix representing the inter-bond connections. For a hexag-
+onal arrangement, N ≈16. Additionally, the stiffness k is given by
+k = kn ≈π
+2 Er, with E representing the Young’s modulus and r
+being the average radius of the elements.
+For explicit simulation, our experimental findings indicate that
+a timestep of 0.2T is the threshold that avoids numerical instabil-
+ity and oscillations. This timestep is consistently applied across all
+explicit simulation comparisons with implicit methods presented
+in the text. Regarding implicit simulations, our optimization-based
+method supports stable computations with large timesteps, poten-
+tially allowing for one timestep per frame. However, increasing
+the timestep can lead to more iterations in the Newton’s solver,
+decreasing search efficiency. Beyond a certain point, the compu-
+tational savings from increasing the timestep are not substantial.
+Additionally, an overly large timestep may result in infrequent frac-
+ture detection, which can impair the simulation’s accuracy. In our
+experiments, we have found that a timestep ranging from 20 to 100
+times the period T is reasonable.
+5.2
+Semi-Positive Definite Projection
+The Hessian matrix on a manifold may not be semi-positive defi-
+nite, which poses a significant challenge as it may lead to a wrong
+search direction. To guarantee that the search direction is a cor-
+rect descent direction, a semi-positive definite projection onto the
+manifold is applied to our Hessian matrix. Similar regularization
+treatments are also found in other methods [Li et al. 2020a].
+5.3
+Preconditioned Conjugate Gradient
+The preconditioned conjugate gradient method is employed to
+efficiently solve large sparse symmetric systems of the form
+Hess f (xk). Specifically, we employ an algebraic multigrid precon-
+dition to facilitate fast and accurate solutions. Similar to the work
+of Gast et al. [2015], the absolute error is not explicitly managed in
+the beginning steps, and instead the relative error is taken as a ter-
+mination criterion for the conjugate gradient method. This relative
+error is calculated as
+ϵr = min(0.5,
+
+| grad f (xk)|).
+(31)
+The algebraic multigrid preconditioning in conjunction with the
+relative error termination criterion lead to efficient and accurate
+solutions for large sparse symmetric systems.
+5.4
+Collision Handling
+In accordance with our optimization formulation, a variety of col-
+lision handling methods can be seamlessly integrated into our
+approach, including simple penalty-based methods and recently
+ACM Trans. Graph., Vol. 44, No. 1, Article 9. Publication date: January 2025.
+
+=== PAGE 9 ===
+9:8
+•
+J.-M. Lu et al.
+Table 1. Simulation Statistics for Our Experiments, with the Slow Motion of 1x Corresponding to One Frame Per 1/60th of a Second and 0.125x
+Corresponding to One Frame Per 1/480th of a Second
+Demo
+N
+E
+Δt (explicit)
+Δt (implicit)
+Slow-Motion Scale
+s/frame (explicit)
+s/frame (implicit)
+Speedup
+Beam Stretch
+19K
+1E7
+2.6E-5
+0.016
+1x
+34.6
+3.52
+9.8
+Beam Twist
+19K
+1E7
+2.6E-5
+0.0015
+1x
+34.6
+14.76
+2.3
+Beam Drape
+64K
+1E9
+1.7E-6
+0.008
+1x
+2,230.9
+711.7
+3.1
+Beam Drape
+124K
+1E6
+4.4E-5
+0.0024
+1x
+255.2
+121.9
+2.1
+Chocolate
+58K
+1E9
+4.4E-7
+4.4e-5
+0.125x
+857.8
+343.8
+2.5
+Plate
+219K
+1E9
+3.5E-7
+3.5e-5
+0.125x
+4,564.6
+1,911.8
+2.4
+Cloth
+165K
+1E9
+3.5E-7
+1.74e-5
+0.125x
+1,299.6
+394.2
+3.3
+The timestep and time consumption for the proposed approach are compared with explicit and implicit methods at different element numbers and stiffness settings.
+Fig. 5. The figure, from left to right, illustrates the performance of the FEM, MPM, and our approach across varying scales. The upper, middle, and lower
+rows represent the fracture behavior of the three methods under identical loads at different scales. It is observable that FEM exhibits completely distinct
+fracture occurrences across the three scales. MPM shows similar fracture timings at medium and high scales but deviates at lower scales. In contrast, our
+method consistently demonstrates fracture at the same load across all scales, indicating superior scale consistency.
+utilized incremental potential contact [Li et al. 2020a]. However,
+this work primarily focuses on fragmentation-related phenomena,
+where the impact of the collision module on the fragmentation per-
+formance is minimal and not the main emphasis here. Therefore,
+we have employed a very simple treatment method for visually
+acceptable simulation results.
+Repulsion Term. A simple collision potential is introduced to
+model repulsion between discrete elements and external objects.
+Specifically, the potential includes two components: Vself, repre-
+senting the repulsive forces between the discrete elements, and
+Vexternal, representing the repulsive forces between the elements
+and the external objects. The corresponding mathematical expres-
+sions are
+Vself = 1
+2kec(∥pi −pj ∥−ri −rj)2
+(32)
+Vexternal = 1
+2kc ∥д(pi)∇д(pi)∥2,
+(33)
+where kec denotes element collision stiffness, kc external collision
+stiffness, pi and pj the positions of the discrete elements, and д the
+signed distance function of the external objects. To ensure that the
+collision term does not adversely affect the system’s computational
+efficiency while maintaining a visually coherent outcome without
+noticeable interpenetration, we have set the collision stiffness and
+element collision stiffness to the order of Ermax, where E is the
+max Young’s modulus of element and rmax is the max radius of
+elements. In our experiments, this selection has minimal impact
+on the system’s convergence rate and yields visually acceptable
+simulation results.
+Friction. Our approach for modifying the velocity and angular
+velocity of an element in the post-collision process relies on an
+explicit method. In the case of an external collision or self-collision,
+the relative velocity vij and the relative angular velocity wij are
+computed between element i and the external object j or another
+element j, respectively, usingvij = vn+vt , wherevn andvt denote
+the normal and tangential components of the relative velocity. To
+ACM Trans. Graph., Vol. 44, No. 1, Article 9. Publication date: January 2025.
+
+=== PAGE 10 ===
+Implicit Bonded Discrete Element Method with Manifold Optimization
+•
+9:9
+calculate the modification of velocity and angular velocity, we use
+the following equations:
+Δvi = −min(1.0, μs
+∥Fn∥Δt
+mi ∥vt ∥)vt
+(34)
+Δwi = −min(1.0, μr
+∥Fn∥r3
+i Δt
+Ii ∥wij ∥)wij.
+(35)
+Here, mi and Ii represent the mass and moment of inertia of ele-
+menti, respectively, and μs and μr denote the coefficients of sliding
+and rotation friction. For external collisions, Fn = kcд(pi)∇д(pi),
+and for self-collisions, Fn = kec |∥pi −pj ∥−ri −rj | pi−pj
+∥pi−pj ∥. Finally,
+we project the modifications onto the direction of vi and wi, and
+ensure that the magnitude of the modification does not exceed the
+modulus of vi and wi. Therefore, the velocity and angular veloc-
+ity can be modified to zero at most. The explicit friction treatment
+method is evidently not sufficiently precise. In our experiments,
+we observed that different timestep selections necessitated the use
+of varying friction coefficients to achieve similar visual outcomes.
+Smaller timesteps required a reduction in the friction coefficient,
+whereas larger timesteps demanded an increase. However, since
+the friction effect is not the focus of this article, we intend to em-
+ploy a more accurate model in future work to obviate the need for
+such parameter adjustments.
+6
+Results and Discussion
+The performance of the proposed approach is evaluated through
+a series of experiments. The simulations were conducted using an
+Intel i7 13700K processor, and detailed experimental setups and
+time costs are presented in Table 1. In all experiments, we have
+employed the conventional particle fluid surface method for the
+reconstruction and rendering of fracture surfaces.
+6.1
+Comparison with Rotation Vector Representation
+In the field of rigid body motion simulation, the rotation vector
+representation is commonly employed to compute the rotational
+degrees of freedom. Compared to our method, the rotation vector
+also upholds a computational size of six degrees of freedom. We
+have conducted experimental comparisons between our motion
+representation and the rotation vector-based motion formulation
+from ADD [Geilinger et al. 2020]. Detailed experimental results
+are presented in Figure 6. Utilizing the same BDEM potential, we
+configured an identical three-point beam bending experiment and
+set an equivalent dimensionless convergence threshold. Our exper-
+iments revealed that the simulation outcomes were indistinguish-
+able between the two methods; however, our algorithm achieved
+faster convergence than the ADD approach. Theoretically, the ro-
+tation vector representation introduces no constraints, suggesting
+that our manifold-based search algorithm should exhibit a similar
+convergence rate as the rotation vector. We preliminarily attribute
+the enhanced performance of our algorithm to two factors: first,
+the quaternion representation, which offers superior spatial inter-
+polation properties favorable for search, and second, unlike our
+energy minimization-based method, the ADD approach requires
+the application of the Gauss-Newton method to solve the motion
+equations, which may impose limitations on the convergence effi-
+ciency to a certain extent.
+0.0000
+0.0005
+0.0010
+0.0015
+0.0020
+0.0025
+0.0030
+0.0035
+Δt (s)
+0
+2
+4
+6
+8
+10
+12
+Average Iterations
+E = 109 - Our Method
+E = 109 - Rotation Vector
+E = 108 - Our Method
+E = 108 - Rotation Vector
+E = 107 - Our Method
+E = 107 - Rotation Vector
+E = 106 - Our Method
+E = 106 - Rotation Vector
+Fig. 6. We conducted a three-point beam bending experiment with iden-
+tical settings for our method and rotation vector formulation from the
+work of Geilinger et al. [2020]. The horizontal axis represents the timestep
+size used in the simulation, with different colored curves corresponding to
+various Young’s moduli values of the materials. The vertical axis denotes
+the average number of iterations required during the simulation process.
+The dashed lines in the figure represent the rotation vector formulation,
+whereas the solid lines represent our approach. It is observable that, across
+different timesteps and stiffness coefficients, our method needs fewer iter-
+ations to achieve the same convergence criteria.
+6.2
+Comparison with Other Optimization Methods
+To examine the performance of our proposed optimization ap-
+proach, several experiments were conducted to assess its outcomes
+against commonly used constrained optimization methods. The re-
+sults of these experiments are presented in Figure 7, which shows
+that our proposed approach outperforms commonly used con-
+strained optimization methods.
+Penalty Method. The penalty method uses an external potential
+to convert a constrained optimization problem to an unconstrained
+optimization problem:
+arg min
+x
+Φ(x) + 1
+2κ∥C(x)∥2.
+(36)
+This method is commonly used in constrained optimization due to
+its simplicity. However, its shortcoming is that indefinite stiffness
+is required to satisfy constraints, and the introduced external stiff-
+ness κ can make the entire system an ill-defined problem. In our
+experiments, we found that the penalty method failed to converge
+or converged very slowly in BDEM fracture simulations.
+Lagrange Multiplier. The Lagrange multiplier adds external vari-
+ables λ to the system to convert the constrained optimization prob-
+lem to an unconstrained one:
+arg min
+x,λ
+Φ(x) + λTC(x).
+(37)
+One drawback of this method is the increase in the number of
+variables and computational cost. The actual degrees of freedom
+of rotation is 3, but the use of quaternions increases the number of
+unknowns to 4. The addition of multipliers further increases the
+number of variables to 5. As the number of unknowns increases,
+the computational cost also increases. In our experiments, we
+ACM Trans. Graph., Vol. 44, No. 1, Article 9. Publication date: January 2025.
+
+=== PAGE 11 ===
+9:10
+•
+J.-M. Lu et al.
+0
+20
+40
+60
+80
+100
+120
+140
+Number of Iterations
+10−8
+10−5
+10−2
+101
+104
+107
+1010
+Residual Norm
+First-Order
+Second-Order
+Penalty
+Lagrangian
+Augmented
+Fig. 7. Convergence rate comparison. The results show that the first-order
+manifold optimization and the second-order manifold optimization are
+both faster than the conventional constrained optimization methods, in-
+cluding the penalty method and the Lagrange multiplier method.
+found that the convergence rate was even slower than that of the
+first-order manifold optimizer.
+Augmented Lagrangian. The augmented Lagrangian method
+can be seen as a combination of the penalty method and the La-
+grange multiplier method, and it turns a constrained optimization
+problem into an unconstrained one:
+arg min
+x,λ
+Φ(x) + λTC(x) + 1
+2κ∥C(x)∥2.
+(38)
+The external stiffness does not need to be infinite for the aug-
+mented Lagrangian method. However, in our experiments, the con-
+vergence rate was still lower than that of the manifold optimization
+method.
+6.3
+Comparison with FEM and MPM
+FEM and MPM are two prevalent techniques for simulating frag-
+mentation. FEM has been utilized in real-time simulations [O’Brien
+and Hodgins 1999; Parker and O’Brien 2009], whereas MPM can
+simulate fracture through the continuum damage model [Fan et al.
+2022; Wolper et al. 2019]. We have implemented the methodologies
+presented in the work of Parker and O’Brien [2009] and Wolper
+et al. [2019] as benchmarks for FEM and MPM, respectively, and
+conducted two experiments for a detailed comparison: the three-
+point bending test and the chocolate falling test. The three-point
+bending experiment highlights the differences in scale consistency
+among the three methods across various scales, and the chocolate
+falling test illustrates the disparities of fragmentation under high-
+velocity impacts.
+To ensure a fair and comprehensive comparison, we provide
+implementation details of the baseline methods used in our
+experiments. For the MPM-based approach, we utilize the open
+source phase field fracture model presented in the work of Wolper
+et al. [2019]. Our FEM implementation is based on the method de-
+scribed by Parker and O’Brien [2009], with several modifications
+to enhance accuracy while maintaining computational efficiency.
+We reintroduce the residual propagation and sequential separation
+updating techniques from O’Brien and Hodgins [1999] to achieve
+more precise fracture propagation. We remove the upper limit
+on propagation steps, allowing for a more faithful representation
+of the fracture process. Additionally, we eliminate the minimum
+fracture piece size constraint of three elements to fully capture
+the algorithm’s behavior. To maintain physical plausibility, we
+implement an additional check to remove connections with floppy
+hinge or ball joints, as suggested by Parker and O’Brien [2009].
+This modified FEM implementation can be viewed as a simplified
+version of O’Brien and Hodgins [1999], with the exclusion of
+the remeshing process for individual tetrahedra. This strategic
+simplification prevents an increase in tetrahedron count during
+simulation while still capturing key aspects of fracture behavior.
+The resulting baseline offers a balance between computational
+efficiency and physical fidelity.
+Three Point Bending. Scale consistency is crucial for artists dur-
+ing the rapid prototyping phase of simulation, as it allows them
+to experiment with parameters at a smaller scale, thereby avoid-
+ing the time-consuming iteration associated with large-scale sim-
+ulations. To analyze the scale consistency of our method in com-
+parison to FEM and MPM, we conducted a three-point bending
+experiment. This test is a standard for analyzing material prop-
+erties, where the relationship between beam fracture and the ap-
+plied load reveals the intrinsic characteristics of the material. As de-
+picted in Figure 5, we selected discrete representations of the same
+material for the three methods across three different scales. FEM
+exhibits markedly different fracture events across scales. MPM
+demonstrates similar fracture behavior at medium and high scales
+but fails to accurately simulate fracture at smaller scales, with
+varying fracture initiation frames across resolutions (see Table 2).
+In contrast, our method maintains consistent fracture character-
+istics across all scales, demonstrating superior scale consistency.
+This consistency in our method arises from the discrete nature
+of fracture phenomena, clearly evident in the comparison exper-
+iment. Continuum approaches like FEM and MPM often struggle
+to accurately model small crack patterns due to insufficient local
+discretization, leading to resolution-dependent fracture initiation
+times. As fracture originates from small cracks, these continuum
+approaches may fail to capture the full complexity of the fracture
+process, resulting in resolution-dependent crack patterns. Our dis-
+crete method, however, inherently captures these small-scale inter-
+actions, yielding more consistent behavior across different scales.
+Chocolate Falling. The chocolate falling experiment was primar-
+ily designed to demonstrate the distinctions in simulation out-
+comes among the three methods under high-velocity impact con-
+ditions. In the experiment, the chocolate was consistently dropped
+onto a floor surface at a velocity of 5 m/s. The fracture results of
+the three methods are presented in Figure 8. The baseline FEM
+exhibits severe “shattering” artifacts. Extensive parameter tuning
+yields either numerous tiny fragments or a few large pieces, failing
+to produce the desired intermediate fragmentation pattern with di-
+verse fragment sizes. Figure 9 presents a detailed visualization of
+the damage phase field in MPM. While the MPM method captures
+the continuum damage of materials, it has failed to demonstrate
+ACM Trans. Graph., Vol. 44, No. 1, Article 9. Publication date: January 2025.
+
+=== PAGE 12 ===
+Implicit Bonded Discrete Element Method with Manifold Optimization
+•
+9:11
+Fig. 8. This figure, from left to right, demonstrates the fracture performance of FEM, MPM, and our method under the high-speed drop impact of a chocolate
+object. The FEM resulted in an excessive fragmentation into minute pieces, whereas the MPM failed to produce a physically plausible fragmentation. In
+contrast, BDEM accurately fragmented into a variety of piece sizes, effectively capturing the desired material failure behavior.
+a plausible fragmentation process. This limitation stems from the
+constraints of the phase field model, which necessitates the intro-
+duction of additional artificial rules and parameters for artistic con-
+trol over cracking and fragmentation within this scenario [Fan et al.
+2022; Wolper et al. 2019]. While it is conceivable that the introduc-
+tion of further supplementary rules might enhance the simulation
+outcomes for this particular case, it is clear that such modifications
+are extrinsic to the material’s fundamental properties. In contrast,
+our method necessitates only the specification of material param-
+eters to simulate the fracture phenomenon, thus achieving a real-
+istic and authentic fragmentation effect.
+Table 2 details the computational time costs and settings for
+both experiments. The data reveals that BDEM achieves more con-
+sistent fracture frames across resolutions compared to FEM and
+MPM, indicating that fracture occurs at similar deformation states
+and demonstrating superior scale consistency.
+Per-frame computational costs indicate that FEM is the slow-
+est method, requiring residual propagation for accurate crack
+patterns, resulting in more iterations per step. While MPM has
+lower per-frame computational costs than BDEM, its inferior scale
+consistency necessitates extensive parameter tuning of material
+strength and grid resolution to achieve satisfactory fracture results.
+In contrast, BDEM simplifies this process significantly: suitable ma-
+terial strength parameters can be rapidly determined at low reso-
+lution and then applied directly to medium- and high-resolution
+simulations with consistent results.
+Analysis of fracture thresholds reveals an intriguing discrep-
+ancy. Despite all three methods employing thresholds with iden-
+tical physical dimensions, the numerical value for the FEM thresh-
+old diverges significantly from the other two approaches. Notably,
+this smaller threshold value in FEM aligns with parameters in
+the original work by O’Brien and Hodgins [1999], whereas BDEM
+and MPM thresholds more closely approximate real-world mate-
+rial strengths.
+6.4
+Comparison with the Explicit Method
+Beam Stretch and Twist. In our experiments, we compared the
+simulation results of our implicit method with the explicit method
+Fig. 9. A visualization of the damage profile with MPM. It is evident that,
+with the correct material strength parameters applied, the chocolate ma-
+terial exhibits damage effects under high-velocity impact conditions. How-
+ever, this setting does not precipitate fracture, necessitating the introduc-
+tion of further rules and controls to direct the fragmentation process. This
+requirement highlights a limitation inherent to such continuum-based
+methods, where additional rules are needed to simulate realistic behavior.
+proposed in prior work [Lu et al. 2021]. Specifically, we evaluated
+their performance in beam stretching and twisting scenarios, and
+found that both methods produced identical results under the same
+settings (Figure 10).
+Beam Drape. This experiment investigates and compares the
+simulation time of the implicit and explicit simulation methods us-
+ing the beam drape scenario with different stiffness levels. Two
+curves are plotted in Figure 11 to examine the relationship be-
+tween simulation time and stiffness, as well as simulation time and
+scale. Our results show that the implicit method outperforms the
+explicit method by three to six times in terms of runtime. An ex-
+periment comparing explicit and implicit methods for simulating
+beam drape is shown in Figure 12.
+Chocolate. In this experiment, the deformation of a chocolate
+drop with high stiffness is simulated to evaluate the computational
+efficiency between implicit and explicit simulation methods in rich
+contact scenarios. The outcomes indicate that the implicit method
+ACM Trans. Graph., Vol. 44, No. 1, Article 9. Publication date: January 2025.
+
+=== PAGE 13 ===
+9:12
+•
+J.-M. Lu et al.
+Table 2. Simulation Statistics for Our Experiments, with the Slow Motion of 1x Corresponding to One Frame Per 1/60th of a Second and 0.125x
+Corresponding to One Frame Per 1/480th of a Second
+Scene
+Method
+# Points
+Δt(s)
+E
+ν
+τ
+Time Per Frame (s)
+Fracture Frame
+Three Point Bending (Low)
+FEM
+578
+4.2E-5
+1E7
+0.3
+300
+6.2
+6
+MPM
+500
+4.2E-5
+1E7
+0.3
+3E4
+0.6
+26
+Ours
+532
+2.0E-5
+1E7
+0.3
+3E4
+0.9
+23
+Three Point Bending (Middle)
+FEM
+1.7K
+2.8E-5
+1E7
+0.3
+300
+57.6
+13
+MPM
+2K
+2.8E-5
+1E7
+0.3
+3E4
+5.2
+23
+Ours
+1.8K
+9.1E-6
+1E7
+0.3
+3E4
+7.3
+25
+Three Point Bending (High)
+FEM
+16.4K
+2.0E-5
+1E7
+0.3
+300
+1240
+29
+MPM
+20K
+2.1E-5
+1E7
+0.3
+3E4
+48.2
+11
+Ours
+18K
+5.8E-5
+1E7
+0.3
+3E4
+137.1
+25
+Chocolate Falling (0.125x slow motion)
+FEM
+13.6K
+5.2E-6
+1E8
+0.3
+100
+650.1
+–
+MPM
+20K
+4.2E-6
+1E8
+0.3
+5E4
+24.5
+–
+Ours
+22K
+4.4E-5
+1E8
+0.3
+5E4
+106.8
+–
+The timestep and time consumption for the proposed approach are compared with explicit and implicit methods at different element numbers and stiffness settings.
+Fig. 10. Comparison of explicit (blue) and implicit (red) methods in simu-
+lating a stretched and twisted beam. Both approaches yield similar results.
+outperforms the explicit method by achieving a 2.5x speedup. The
+visualization of the simulation can be inspected in Figure 2.
+Plate. This experiment compares the computational efficiency
+of implicit and explicit methods for simulating the fracture of a
+plate with high stiffness upon impact with the ground. Our method
+has demonstrated a 2.4x increase in computational speed relative
+to the explicit method under these conditions. The simulation re-
+sults are illustrated in Figure 3.
+Cloth. Here we examine the computational efficiency of implicit
+versus explicit methods in the context of yarn-level cloth simula-
+tion, characterized by high tensile and low bending stiffness of the
+yarns. Our method provides a 3.3x computational speed advantage
+over the explicit approach under these circumstances. The dynam-
+ics of the cloth tearing, as simulated, are depicted in Figure 4.
+7
+Conclusion
+We presented an optimization-based implicit integrator for the
+BDEM system, and introduced a manifold optimization scheme
+to transform the nonlinear dynamic simulation into an uncon-
+strained optimization problem on a spherical manifold, which
+significantly improves the solution stability and efficiency. In
+105
+106
+107
+108
+109
+Stiffness
+0
+200
+400
+600
+800
+1000
+1200
+Simulation Time Per Frame (s)
+Beam Drape Implicit
+Beam Drape Explicit
+Fig. 11. This experiment compares explicit and implicit methods for sim-
+ulating beam drape. The left images illustrate static drape scenarios with
+varying material stiffness: red (109), yellow (108), green (107), and blue (106).
+The curves in the right image plot the relationship between computational
+cost and material stiffness, demonstrating that implicit methods produce
+faster results for a range of stiffness values.
+addition, a nullspace operator was proposed, which simplifies the
+optimization procedure and reduces the number of unknowns. As
+well, our new implicit BDEM approach uses the semi-positive def-
+inite projection method with preconditioned conjugate gradient
+and line search method on the manifold, which achieves a stable
+integrator. In our experiments, we showcased that our method
+surpasses the explicit BDEM in terms of computational speed.
+Furthermore, when compared to FEM and MPM for fragmenta-
+tion, our approach exhibits superior scale consistency, accurately
+simulating fracture effects at smaller scales. The simulation of
+fragmentation is more realistic and natural with our method,
+which necessitates only the provision of material parameters to
+get the authentic fracture process.
+While our approach offers notable advancements, it is not
+without its limitations. Specifically, to mitigate complexities
+at the contribution points, we utilized a rudimentary collision
+model for collision management. This simplification may lead to
+a diminished fidelity in the representation of collision effects. In
+future work, we plan to integrate more sophisticated collision
+ACM Trans. Graph., Vol. 44, No. 1, Article 9. Publication date: January 2025.
+
+=== PAGE 14 ===
+Implicit Bonded Discrete Element Method with Manifold Optimization
+•
+9:13
+103
+104
+105
+106
+Number of Particles
+10−1
+100
+101
+102
+103
+104
+Simulation Time Per Frame (s)
+Beam Drape Implicit
+Beam Drape Explicit
+Fig. 12. This experiment compares explicit and implicit methods for simu-
+lating beam drape. The curves plot the relationship between the computa-
+tional cost and simulated discrete elements, showing that implicit meth-
+ods significantly outperform explicit methods for finer simulation scales.
+models into our optimization framework to enhance the accuracy
+and realism of our simulations. Furthermore, the BDEM system
+we developed is highly amenable to parallelization. Although our
+current exposition does not delve into the details of GPU acceler-
+ation for the sake of a clear computational comparison, we intend
+to explore a more detailed implementation of parallel acceleration
+in our methods moving forward. Additionally, while our approach
+successfully captures fine-grained collision details, the reconstruc-
+tion and rendering of fracture surfaces also play a crucial role in
+the final visual outcomes. We aim to explore fracture surface recon-
+struction methods more tailored to the nuances of BDEM in our
+ongoing research.
+References
+Iván Alduán, Angel Tena, and Miguel A. Otaduy. 2009. Simulation of high-resolution
+granular media. In Proceedings of the Spanish Computer Graphics Conference (CEIG
+’09). 11–18.
+Damien André, Ivan Iordanoff, Jean-luc Charles, and Jérôme Néauport. 2012. Discrete
+element method to simulate continuous material by using the cohesive beam
+model. Computer Methods in Applied Mechanics and Engineering 213 (2012), 113–
+125.
+Zhaosheng Bao, Jeong-Mo Hong, Joseph Teran, and Ronald Fedkiw. 2007. Fracturing
+rigid materials. IEEE Transactions on Visualization and Computer Graphics 13, 2
+(2007), 370–378.
+David Baraff. 1989. Analytical methods for dynamic simulation of non-penetrating
+rigid bodies. In Proceedings of the 16th Annual Conference on Computer Graphics
+and Interactive Techniques. 223–232.
+David Baraff and Andrew Witkin. 1998. Large steps in cloth simulation. In Proceedings
+of the 25th Annual Conference on Computer Graphics and Interactive Techniques
+(SIGGRAPH ’98). 43–54.
+Nathan Bell, Yizhou Yu, and Peter J. Mucha. 2005. Particle-based simulation of granu-
+lar materials. In Proceedings of the 2005 ACM SIGGRAPH/Eurographics Symposium
+on Computer Animation. 77–86.
+Jan Bender, Kenny Erleben, and Jeff Trinkle. 2014. Interactive simulation of rigid body
+dynamics in computer graphics. Computer Graphics Forum 33 (2014), 246–270.
+Miklós Bergou, Max Wardetzky, Stephen Robinson, Basile Audoly, and Eitan Grin-
+spun. 2008. Discrete elastic rods. In ACM SIGGRAPH 2008 Papers. ACM, 1–12.
+Peter Betsch and Ralf Siebert. 2009. Rigid body dynamics in terms of quaternions:
+Hamiltonian formulation and conserving numerical integration. International
+Journal for Numerical Methods in Engineering 79, 4 (2009), 444–473.
+Sofien Bouaziz, Sebastian Martin, Tiantian Liu, Ladislav Kavan, and Mark Pauly. 2014.
+Projective dynamics. ACM Transactions on Graphics 33, 4 (2014), 1–11.
+Nicolas Boumal. 2023. An Introduction to Optimization on Smooth Manifolds. Cam-
+bridge University Press. https://www.nicolasboumal.net/book
+Wei Chen, Fei Zhu, Jing Zhao, Sheng Li, and Guoping Wang. 2018. Peridynamics-
+based fracture animation for elastoplastic solids. Computer Graphics Forum 37
+(2018), 112–124.
+Yu Ju Chen, Uri M. Ascher, and Dinesh K. Pai. 2017. Exponential Rosenbrock-Euler
+integrators for elastodynamic simulation. IEEE Transactions on Visualization and
+Computer Graphics 24, 10 (2017), 2702–2713.
+Zhili Chen, Miaojun Yao, Renguo Feng, and Huamin Wang. 2014. Physics-inspired
+adaptive fracture refinement. ACM Transactions on Graphics 33, 4 (2014), 1–7.
+Floyd M. Chitalu, Qinghai Miao, Kartic Subr, and Taku Komura. 2020. Displacement-
+correlated XFEM for simulating brittle fracture. Computer Graphics Forum 39
+(2020), 569–583.
+P. A. Cundall. 1971. A computer model for simulating progressive, large-scale move-
+ment in blocky rock system. In Proceedings of the International Symposium on Rock
+Mechanics.
+P. A. Cundall and O. D. L. Strack. 1979. A discrete numerical model for granular as-
+semblies. Géotechnique 29, 1 (1979), 47–65.
+David N. De Klerk, Thomas Shire, Zhiwei Gao, Andrew T. McBride, Christopher J.
+Pearce, and Paul Steinmann. 2022. A variational integrator for the discrete ele-
+ment method. Journal of Computational Physics 462 (2022), 111253.
+Bernhard Eberhardt, Olaf Etzmuß, and Michael Hauth. 2000. Implicit-explicit schemes
+for fast animation with particle systems. In Computer Animation and Simulation
+2000. Eurographics. Springer, 137–151.
+Linxu Fan, Floyd M. Chitalu, and Taku Komura. 2022. Simulating brittle fracture with
+material points. ACM Transactions on Graphics 41, 5 (2022), 1–20.
+Zachary Ferguson, Minchen Li, Teseo Schneider, Francisca Gil-Ureta, Timothy Lan-
+glois, Chenfanfu Jiang, Denis Zorin, Danny M. Kaufman, and Daniele Panozzo.
+2021. Intersection-free rigid body dynamics. ACM Transactions on Graphics 40, 4
+(2021), 1–16.
+Marco Fratarcangeli, Valentina Tibaldo, and Fabio Pellacini. 2016. Vivace: A practical
+Gauss-Seidel method for stable soft body dynamics. ACM Transactions on Graph-
+ics 35, 6 (2016), 1–9.
+Theodore F. Gast, Craig Schroeder, Alexey Stomakhin, Chenfanfu Jiang, and Joseph M.
+Teran. 2015. Optimization integrator for large time steps. IEEE Transactions on
+Visualization and Computer Graphics 21, 10 (2015), 1103–1115.
+Moritz
+Geilinger,
+David
+Hahn,
+Jonas
+Zehnder,
+Moritz
+Bächer,
+Bernhard
+Thomaszewski, and Stelian Coros. 2020. ADD: Analytically differentiable
+dynamics for multi-body systems with frictional contact. ACM Transactions on
+Graphics 39, 6 (2020), 1–15.
+David Hahn and Chris Wojtan. 2015. High-resolution brittle fracture simulation with
+boundary elements. ACM Transactions on Graphics 34, 4 (2015), 1–12.
+David Hahn and Chris Wojtan. 2016. Fast approximations for boundary element based
+brittle fracture simulation. ACM Transactions on Graphics 35, 4 (2016), 1–11.
+James K. Hahn. 1988. Realistic animation of rigid bodies. ACM SIGGRAPH Computer
+Graphics 22, 4 (1988), 299–308.
+Jeffrey Hellrung, Andrew Selle, Arthur Shek, Eftychios Sifakis, and Joseph Teran. 2009.
+Geometric fracture modeling in Bolt. In SIGGRAPH 2009: Talks. ACM, 1.
+Gentaro Hirota, Susan Fisher, A State, Chris Lee, and Henry Fuchs. 2001. An implicit
+finite element method for elastic solids in contact. In Proceedings of the 14th Con-
+ference on Computer Animation. IEEE, 136–254.
+Couro Kane, Jerrold E. Marsden, Michael Ortiz, and Matthew West. 2000. Variational
+integrators and the Newmark algorithm for conservative and dissipative mechan-
+ical systems. International Journal for Numerical Methods in Engineering 49, 10
+(2000), 1295–1325.
+Ioannis Karamouzas, Nick Sohre, Rahul Narain, and Stephen J. Guy. 2017. Implicit
+crowds: Optimization integrator for robust crowd simulation. ACM Transactions
+on Graphics 36, 4 (2017), 1–13.
+Peter Kaufmann, Sebastian Martin, Mario Botsch, Eitan Grinspun, and Markus Gross.
+2009. Enrichment textures for detailed cutting of shells. In ACM SIGGRAPH 2009
+Papers. ACM, 1–10.
+Min Hyung Kee, Kiwon Um, HyunMo Kang, and JungHyun Han. 2023. An
+optimization-based SPH solver for simulation of hyperelastic solids. Computer
+Graphics Forum 42 (2023), 225–233.
+Dan Koschier, Jan Bender, and Nils Thuerey. 2017. Robust eXtended finite elements
+for complex cutting of deformables. ACM Transactions on Graphics 36, 4 (2017),
+1–13.
+Dan Koschier, Sebastian Lipponer, and Jan Bender. 2014. Adaptive tetrahedral meshes
+for brittle fracture simulation. In Proceedings of the Symposium on Computer Ani-
+mation, Vol. 3.
+Tassilo Kugelstadt and Elmar Schömer. 2016. Position and orientation based Cosserat
+rods. In Proceedings of the Symposium on Computer Animation. 169–178.
+Lei Lan, Yin Yang, Danny Kaufman, Junfeng Yao, Minchen Li, and Chenfanfu Jiang.
+2021. Medial IPC: Accelerated incremental potential contact with medial elastics.
+ACM Transactions on Graphics 40, 4 (2021), 1–16.
+Minchen Li, Zachary Ferguson, Teseo Schneider, Timothy R. Langlois, Denis Zorin,
+Daniele Panozzo, Chenfanfu Jiang, and Danny M. Kaufman. 2020a. Incremental
+ACM Trans. Graph., Vol. 44, No. 1, Article 9. Publication date: January 2025.
+
+=== PAGE 15 ===
+9:14
+•
+J.-M. Lu et al.
+potential contact: Intersection-and inversion-free, large-deformation dynamics.
+ACM Transactions on Graphics 39, 4 (2020), 1–20.
+Minchen Li, Ming Gao, Timothy Langlois, Chenfanfu Jiang, and Danny M. Kaufman.
+2019. Decomposed optimization time integrator for large-step elastodynamics.
+ACM Transactions on Graphics 38, 4 (2019), 1–10.
+Minchen Li, Danny M. Kaufman, and Chenfanfu Jiang. 2020b. Codimensional incre-
+mental potential contact. arXiv preprint arXiv:2012.04457 (2020).
+C. Karen Liu and Sumit Jain. 2012. A Quick Tutorial on Multibody Dynamics. Online
+Tutorial. Georgia Institute of Technology.
+Tiantian Liu, Adam W. Bargteil, James F. O’Brien, and Ladislav Kavan. 2013. Fast sim-
+ulation of mass-spring systems. ACM Transactions on Graphics 32, 6 (2013), 1–7.
+Tiantian Liu, Sofien Bouaziz, and Ladislav Kavan. 2016. Towards real-time simulation
+of hyperelastic materials. arXiv preprint arXiv:1604.07378 (2016).
+Fabian Löschner, Andreas Longva, Stefan Jeske, Tassilo Kugelstadt, and Jan Bender.
+2020. Higher-order time integration for deformable solids. Computer Graphics Fo-
+rum 39 (2020), 157–169.
+Jia-Ming Lu, Chen-Feng Li, Geng-Chen Cao, and Shi-Min Hu. 2021. Simulating frac-
+tures with bonded discrete element method. IEEE Transactions on Visualization
+and Computer Graphics 28, 12 (2021), 4810–4824.
+Sebastian Martin, Bernhard Thomaszewski, Eitan Grinspun, and Markus Gross. 2011.
+Example-based elastic materials. In ACM SIGGRAPH 2011 Papers. ACM, 1–8.
+Dominik L. Michels, Gerrit A. Sobottka, and Andreas G. Weber. 2014. Exponential
+integrators for stiff elastodynamic problems. ACM Transactions on Graphics 33, 1
+(2014), 1–20.
+Neil Molino, Zhaosheng Bao, and Ron Fedkiw. 2004. A virtual node algorithm for
+changing mesh topology during simulation. ACM Transactions on Graphics 23, 3
+(2004), 385–392.
+Matthias Müller and Nuttapong Chentanez. 2011. Solid simulation with oriented par-
+ticles. In ACM SIGGRAPH 2011 Papers. ACM, 1–10.
+Matthias Müller, Nuttapong Chentanez, and Tae-Yong Kim. 2013. Real time dynamic
+fracture with volumetric approximate convex decompositions. ACM Transactions
+on Graphics 32, 4 (2013), 1–10.
+Matthias Müller, Miles Macklin, Nuttapong Chentanez, Stefan Jeschke, and Tae-Yong
+Kim. 2020. Detailed rigid body simulation with extended position based dynamics.
+Computer Graphics Forum 39 (2020), 101–112.
+Matthias Müller, Leonard McMillan, Julie Dorsey, and Robert Jagnow. 2001. Real-time
+simulation of deformation and fracture of stiff materials. In Proceedings of the 2001
+Workshop on Computer Animation and Simulation (Eurographics ’01). 113–124.
+Rahul Narain, Matthew Overby, and George E. Brown. 2016. ADMM⊆projective dy-
+namics: Fast simulation of general constitutive models. In Proceedings of the Sym-
+posium on Computer Animation, Vol. 1.
+Matthieu Nesme, Paul G. Kry, Lenka Jeřábková, and François Faure. 2009. Preserving
+topology and elasticity for embedded deformable models. In ACM SIGGRAPH 2009
+Papers. ACM, 1–9.
+Vinh D. X. Nguyen, A. Kiet Tieu, Damien André, Lihong Su, and Hongtao Zhu. 2021.
+Discrete element method using cohesive plastic beam for modeling elasto-plastic
+deformation of ductile materials. Computational Particle Mechanics 8 (2021), 437–
+457.
+James F. O’Brien and Jessica K. Hodgins. 1999. Graphical modeling and animation of
+brittle fracture. In Proceedings of the 26th Annual Conference on Computer Graphics
+and Interactive Techniques (SIGGRAPH ’99). 137–146.
+Eric G. Parker and James F. O’Brien. 2009. Real-time deformation and fracture in a
+game environment. In Proceedings of the 2009 ACM SIGGRAPH/Eurographics Sym-
+posium on Computer Animation. 165–175.
+Mark Pauly, Richard Keiser, Bart Adams, Philip Dutré, Markus Gross, and Leonidas J.
+Guibas. 2005. Meshless animation of fracturing solids. ACM Transactions on
+Graphics 24, 3 (2005), 957–964.
+Tobias Pfaff, Rahul Narain, Juan Miguel De Joya, and James F. O’Brien. 2014. Adaptive
+tearing and cracking of thin sheets. ACM Transactions on Graphics 33, 4 (2014), 1–
+9.
+David O. Potyondy and P. A. Cundall. 2004. A bonded-particle model for rock. Inter-
+national Journal of Rock Mechanics and Mining Sciences 41, 8 (2004), 1329–1364.
+Saty Raghavachary. 2002. Fracture generation on polygonal meshes using Voronoi
+polygons. In ACM SIGGRAPH 2002 Conference Abstracts and Applications. ACM,
+187–187.
+Witawat Rungjiratananon, Zoltan Szego, Yoshihiro Kanamori, and Tomoyuki Nishita.
+2008. Real-time animation of sand-water interaction. Computer Graphics Forum
+27 (2008), 1887–1893.
+Sara C. Schvartzman and Miguel A. Otaduy. 2014. Fracture animation based on high-
+dimensional Voronoi diagrams. In Proceedings of the 18th Meeting of the ACM
+SIGGRAPH Symposium on Interactive 3D Graphics and Games. 15–22.
+Eftychios Sifakis, Kevin G. Der, and Ronald Fedkiw. 2007. Arbitrary cutting
+of deformable tetrahedralized objects. In Proceedings of the 2007 ACM SIG-
+GRAPH/Eurographics Symposium on Computer Animation. 73–80.
+Carlota Soler, Tobias Martin, and Olga Sorkine-Hornung. 2018. Cosserat rods with
+projective dynamics. Computer Graphics Forum 37 (2018), 137–147.
+Ari Stern and Eitan Grinspun. 2009. Implicit-explicit variational integration of highly
+oscillatory problems. Multiscale Modeling & Simulation 7, 4 (2009), 1779–1794.
+David E. Stewart. 2000. Rigid-body dynamics with friction and impact. SIAM Review
+42, 1 (2000), 3–39.
+Jonathan Su, Craig Schroeder, and Ronald Fedkiw. 2009. Energy stability and frac-
+ture for frame rate rigid body simulations. In Proceedings of the 2009 ACM SIG-
+GRAPH/Eurographics Symposium on Computer Animation. 155–164.
+Pascal Volino and Nadia Magnenat-Thalmann. 2001. Comparing efficiency of inte-
+gration methods for cloth simulation. In Proceedings: Computer Graphics Inter-
+national 2001. IEEE, 265–272.
+Huamin Wang and Yin Yang. 2016. Descent methods for elastic body simulation on
+the GPU. ACM Transactions on Graphics 35, 6 (2016), 1–10.
+Stephanie Wang, Mengyuan Ding, Theodore F. Gast, Leyi Zhu, Steven Gagniere, Chen-
+fanfu Jiang, and Joseph M. Teran. 2019. Simulation and visualization of ductile
+fracture with the material point method. Proceedings of the ACM on Computer
+Graphics and Interactive Techniques 2, 2 (2019), 1–20.
+Marcel Weiler, Dan Koschier, and Jan Bender. 2016. Projective fluids. In Proceedings of
+the 9th International Conference on Motion in Games. 79–84.
+Martin Wicke, Daniel Ritchie, Bryan M. Klingner, Sebastian Burke, Jonathan R.
+Shewchuk, and James F. O’Brien. 2010. Dynamic local remeshing for elastoplastic
+simulation. ACM Transactions on Graphics 29, 4 (2010), 1–11.
+Chris Wojtan and Greg Turk. 2008. Fast viscoelastic behavior with thin features. In
+ACM SIGGRAPH 2008 Papers. ACM, 1–8.
+Joshuah Wolper, Yunuo Chen, Minchen Li, Yu Fang, Ziyin Qu, Jiecong Lu, Meggie
+Cheng, and Chenfanfu Jiang. 2020. AnisoMPM: Animating anisotropic damage
+mechanics. ACM Transactions on Graphics 39, 4 (2020), 1–16.
+Joshuah Wolper, Yu Fang, Minchen Li, Jiecong Lu, Ming Gao, and Chenfanfu Jiang.
+2019. CD-MPM: Continuum damage material point methods for dynamic fracture
+animation. ACM Transactions on Graphics 38, 4 (2019), 1–15.
+Yonghao Yue, Breannan Smith, Peter Yichen Chen, Maytee Chantharayukhonthorn,
+Ken Kamrin, and Eitan Grinspun. 2018. Hybrid grains: Adaptive coupling of dis-
+crete and continuum simulations of granular media. ACM Transactions on Graph-
+ics 37, 6 (2018), 1–19.
+Changxi Zheng and Doug L. James. 2010. Rigid-body fracture sound with precom-
+puted soundbanks. In ACM SIGGRAPH 2010 Papers. ACM, 1–13.
+Yufeng Zhu, Robert Bridson, and Chen Greif. 2015. Simulating rigid body fracture
+with surface meshes. ACM Transactions on Graphics 34, 4 (2015), 1–11.
+Appendices
+A
+Quaternion Operations
+Quaternions are generally represented in the following form:
+q = ui + vj + wk + s = {u,v,w,s} =
+			
+
+u
+v
+w
+s
+
+
+,
+(39)
+where u, v, w, and s are real numbers, and 1, i, j, and k are the
+basis vectors or basis elements. A unit quaternion can denote a
+rotation in 3D space. Compared to other forms of rotation repre-
+sentations, such as Euler angles, axis-angle, and rotation matrices,
+quaternions have advantages in computational simplicity and effi-
+ciency. Hence, quaternions are widely used in computer graphics
+to represent rotation, including BDEM [Lu et al. 2021], where they
+are used to describe the rotational status of discrete elements. As
+quaternions play a key role in formulating the proposed implicit
+BDEM, we briefly recap the key information related to quaternion
+operations in this section.
+Quaternion Multiplication. The multiplication of quaternions
+represents the composition of rotations: the left multiplication rep-
+resents the order of rotations, and the right multiplication repre-
+sents the subsequent rotation of the coordinate system. Rotations
+can also be represented in the matrix form with quaternions:
+qiqj = Ql(qi)qj = Qr (qj)qi,
+(40)
+where Ql(q) is called the left multiplication matrix and Qr (q) the
+right multiplication matrix. Letting vector t = {u,v,w} denote the
+ACM Trans. Graph., Vol. 44, No. 1, Article 9. Publication date: January 2025.
+
+=== PAGE 16 ===
+Implicit Bonded Discrete Element Method with Manifold Optimization
+•
+9:15
+imaginary part of quaternion {u,v,w,s}, the left and right multi-
+plication matrices can be expressed as follows:
+Ql(q) =
+sI3 + t×
+t
+−tT
+s
+
+(41)
+Qr (q) =
+sI3 −t×
+t
+−tT
+s
+
+,
+(42)
+where the skew symmetric matrix t× is the cross matrix of vector
+t :
+t× = 	
+
+0
+−w
+v
+w
+0
+−u
+−v
+u
+0
+
+
+.
+(43)
+Direction Rotation Operator. Letting d0 denote a direction in the
+3D space, the new direction d after a rotation can be expressed as
+d
+0
+
+= q
+d0
+0
+
+q,
+(44)
+where quaternion q denotes the rotation and q = {−u, −v, −w,s}
+is its conjugate. The preceding rotation operation can be rewritten
+as
+d = q ⊙d0,
+(45)
+where ⊙is the direction rotation operator.
+Nullspace Operator. The composition of a quaternion its and con-
+jugate is the unit quaternion, i.e., qq = {0, 0, 0, 1}. In the matrix
+form, this becomes
+qq = Ql(q)q =
+sI3 −t×
+−t
+tT
+s
+ t
+s
+
+=
+			
+
+0
+0
+0
+1
+
+
+.
+(46)
+We can define the upper matrix of Ql(q) as a nullspace operator:
+Gl(q) = sI3 −t×
+−t ,Gr (q) = sI3 + t×
+−t .
+(47)
+The nullspace operator can be used to reduce the computational
+cost of quaternion systems, and the detailed strategy is provided
+in Section 4.2. With the nullspace operator, the following relations
+hold:
+Gl(q)q = 0,Gr (q)q = 0,
+(48)
+and
+Gl(q)TGl(q) = |q|2I4 −qqT ,
+Gl(q)Gl(q)T = |q|2I3.
+(49)
+The multiplicationGl(qi)qj removes the component ofqi inqj and
+projects the vector to the direction of angle axis of quaternionqiqj.
+The quaternion matrix can also be related to the nullspace operator
+matrix as
+Ql(q) =
+
+Gl(q)T
+q
+
+,Qr (q) =
+
+Gr (q)T
+q
+
+.
+(50)
+Derivation and Angular Velocity. Let w4 denote the angular ve-
+locity in four dimensions:
+w4 =
+w
+0
+
+.
+(51)
+The derivative of a quaternion and the extended angular velocity
+w4 satisfy the following relations [Betsch and Siebert 2009]:
+q = 1
+2w4q,
+(52)
+w4 = 2qq.
+(53)
+Quaternion Constraint. A rotation can be represented by a unit
+quaternion. To ensure the quaternion remains as a unit during cal-
+culations, the unit constraint must be applied:
+C(q) = 1
+2(qTq −1) = 0.
+(54)
+B
+Hamiltonian System with Backward Euler
+Formulation
+We present a derivation of the kinetic equation for rotational
+systems using a conventional approach: first establishing the
+continuous formulation, then applying a time discretization
+method to obtain the integrator form. As described by Betsch and
+Siebert [2009], the continuous form of the Hamiltonian system
+equation is given by
+q = 1
+4
+
+J−1
+0 (q · p)q + G(q)T J−1G(q)p
+
+,
+p = −1
+4
+
+J−1
+0 (q · p)p + G(p)T J−1G(p)q
+
+−∇V (q),
+(55)
+where q represents the rotational state, p denotes the extended
+momentum, and J0 = tr(J). Given the quaternion unit length
+constraint with property q · p = 0 [Betsch and Siebert 2009], we
+can simplify the equation to
+q = 1
+4
+
+G(q)T J−1G(q)p
+
+p = −1
+4
+
+G(p)T J−1G(p)q
+
+−∇V (q).
+(56)
+For a spherical element, J = 2
+5mr2I3. Let I = 2
+5mr2. Applying the
+result from Equation (49), we further simplify the equation:
+q = 1
+4I
+
+(I4 −qqT )p
+
+,
+p = −1
+4I
+
+|p|2I4 −ppT 
+q −∇V (q).
+(57)
+Maintaining q · p = 0, we obtain a more concise form:
+q = 1
+4Ip
+p = −1
+4I |p|2q −∇V (q).
+(58)
+Integrating the first equation into the second and simplifying, we
+derive an equation solely in terms of q:
+4I(q + | q|2q) + ∇V (q) = 0.
+(59)
+ACM Trans. Graph., Vol. 44, No. 1, Article 9. Publication date: January 2025.
+
+=== PAGE 17 ===
+9:16
+•
+J.-M. Lu et al.
+Note the new term | q|2q, which distinguishes this formulation
+from non-rotational cases. To align with our manifold optimiza-
+tion approach, we left-multiply by (I4 −qqT ). Since (I4 −qqT )q = 0,
+the residual on the manifold becomes
+(I4 −qqT )(4Iq + ∇V (q)) = 0.
+(60)
+Observe that 4Iq + ∇V (q) and 4I(q + | q|2q) + ∇V (q) yield identical
+residuals on the manifold. Consequently, we can employ the
+simpler form, and discretization using backward Euler results in
+the same expression as in Equation (5).
+C
+Discrete Lagrangian
+Hamilton’s principle is a fundamental relation in physics to de-
+scribe the motion of a dynamic system. By taking the variation of
+the Lagrangian functional S =
+∫t1
+t0 L(x(t), x(t))dt, the equations of
+motion can be obtained as the stationary point of the action func-
+tional. For our system, the Lagrangian function given by the sum
+of the kinetic energy T and the potential energy V :
+L(x, x) = T(x, x) −V (x, x) = 1
+2 xT M x −V (x).
+(61)
+The true evolution of the physical system satisfies
+∂S
+∂x(t) = 0. For
+quaternion-based Hamiltonian system, we can articulate the equa-
+tions within which the extended kinetic energy form is derivable
+from Betsch and Siebert [2009]:
+T(q, q) = qT Mq(q)q.
+(62)
+Here, for one element, Mq(q) = 4Gl(q)JGl(q)T + 2tr(J)qqT , J is
+the moment of inertia matrix and Gl(q) is the nullspace operator
+in Appendix A. Given that the mass matrix Mq(q) varies with q,
+direct differentiation of the equations yields a form akin to the ex-
+tended momentum in rigid body motion, which is complicated for
+the derivation of an incremental potential form. In this context, we
+employ the Discrete Lagrangian formulation to re-derive the equa-
+tions and perform simplifications based on some special properties
+of the BDEM.
+In a small time interval, the action functional can be approxi-
+mated by a discrete Lagrangian:
+Sd =
+n−1
+
+i=0
+Ld(ti,ti+1,xi,xi+1) ≈
+∫tn
+t0
+L(t,x(t))dt.
+(63)
+At the stationary point of the preceding discrete action functional,
+each term of the sum must be set to zero:
+∂Sd
+∂xi
+= 0 = ∂Ld(ti−1,ti,xi−1,xi)
+∂xi
++ ∂Ld(ti,ti+1,xi,xi+1)
+∂xi
+.
+(64)
+Here, with mid-point approximation,
+Td(xi,vi) = ΔtT
+xi+1 + xi
+2
+, xi+1 −xi
+Δt
+
+Vd(xi) = ΔtV
+xi+1 + xi
+2
+
+.
+(65)
+While this formulation is general for any element shape, our
+BDEM system employs spherical discrete elements exclusively.
+This choice allows us to leverage the symmetry properties of
+spheres, significantly simplifying the computational process. It is
+important to note that these optimizations are specific to spherical
+elements and do not apply to other geometries.
+For a sphere with mass m and radius r, the mass matrix Mp =
+mI3, whereas its moment of inertia is J =
+2
+5mr2I3, and here I3
+stands for the 3 × 3 identity matrix. With vector p denoting its po-
+sition and quaternionq its rotation, the discrete energy term for po-
+sition can be easily computed with linear velocity approximation:
+Tp
+d = Δt 1
+2
+pi+1 −pi
+Δt
+T
+mI3
+pi+1 −pi
+Δt
+
+.
+(66)
+For rotation, we approximate the mass matrix and velocity by a
+mid-point approximation:
+T q
+d = Δt 1
+2
+qi+1 −qi
+Δt
+T
+Mq
+qi+1 + qi
+2
+ qi+1 −qi
+Δt
+
+.
+(67)
+With the definition of extended matrix and moment of inertia for
+sphere, we can get
+Mq(q) = 4G(q)JG(q)T + 2tr(J)qqT
+= 8
+5mr2 
+I4 −qqT 
++ 12
+5 mr2qqT
+= 8
+5mr2
+
+I4 + 1
+2qqT
+
+,
+(68)
+where I4 stands for the 4 × 4 identity matrix. With unit
+length property of quaternion during our simulation, we
+have (qi+1 + qi)T (qi+1 −qi) = qT
+i+1qi+1 −qT
+i qi = 0. With the
+mid-point mass matrix as in the work of Betsch and Siebert [2009],
+the discrete kinetic energy is
+T q
+d =
+1
+2Δt (qi+1 −qi)T Mq
+ qi+1 + qi
+2
+
+(qi+1 −qi)
+=
+1
+2Δt (qi+1 −qi)T 8
+5mr 2
+
+I4 + 1
+2
+qi+1 + qi
+2
+ qi+1 + qi
+2
+T 
+(qi+1 −qi)
+=
+1
+2Δt (qi+1 −qi)T 8
+5mr 2I4(qi+1 −qi).
+(69)
+Now the mass matrix for quaternion becomes constant here. The
+extended mass matrix Ms is
+Ms =
+mI3
+8
+5mr2I4
+
+.
+(70)
+Concatenating positions and rotations for all elements as system
+state x, the discrete kinetic energy of the spherical element can
+be expressed as
+Td = 1
+2Δt
+xi+1 −xi
+Δt
+T
+Ms
+xi+1 −xi
+Δt
+
+.
+(71)
+The discrete Lagrangian can be computed by
+Ld(ti,ti+1,xi,xi+1) =Δt 1
+2
+xi+1 −xi
+Δt
+T
+Ms
+xi+1 −xi
+Δt
+
+−ΔtV
+xi+1 + xi
+2
+
+,
+(72)
+and the terms in Equation (64) can be expressed as
+∂Ld(ti−1,ti,xi−1,xi)
+∂xi
+= 1
+Δt Ms(xi −xi−1) −1
+2Δt∇V
+xx−1 + xi
+2
+
+,
+(73)
+∂Ld(ti,ti+1,xi,xi+1)
+∂xi
+= 1
+Δt Ms(xi −xi+1) −1
+2Δt∇V
+xi + xi+1
+2
+
+.
+(74)
+ACM Trans. Graph., Vol. 44, No. 1, Article 9. Publication date: January 2025.
+
+=== PAGE 18 ===
+Implicit Bonded Discrete Element Method with Manifold Optimization
+•
+9:17
+Let ˆx = 2xi −xi−1, and the mid-point form of our variational
+integrator can be obtained as
+1
+Δt2 Ms(xi+1−ˆx)+ 1
+2∇V
+xi+1 + xi
+2
+
++ 1
+2∇V
+xi−1 + xi
+2
+
+= 0. (75)
+Now we have developed a variational integrator for BDEM system
+simulations. The following part outlines the derivation of our
+optimization formulation, which forms the foundation of our
+subsequent optimization process. We introduce a new variable
+ˆz = ˆx −1
+2M−1
+s Δt2∇V ( xi−1+xi
+2
+), calculable from known previous
+states. This allows us to reformulate the equation as
+1
+Δt2 Ms(xi+1 −ˆz) + 1
+2∇V
+xi+1 + xi
+2
+
+= 0.
+(76)
+Observing this equation, we can recast it as an optimization prob-
+lem with the objective function:
+Φ(xi+1) =
+1
+2Δt2 (xi+1 −ˆz)T Ms(xi+1 −ˆz) + V
+xi+1 + xi
+2
+
+.
+(77)
+Received 21 August 2023; revised 15 October 2024; accepted 12 December
+2024
+ACM Trans. Graph., Vol. 44, No. 1, Article 9. Publication date: January 2025.
+
