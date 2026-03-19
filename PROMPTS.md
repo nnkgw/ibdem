@@ -74,3 +74,73 @@ Press ESC or Q to quit.
 ### Response 3 (summary)
 
 本ファイル (`PROMPTS.md`) を全セッションのログとして更新して終了。
+
+---
+
+## 2026-03-19 (Session 2 — Phase 2: Physics Solver)
+
+---
+
+### Prompt 4
+
+残りの作業をすべて行ってください。私はこれから寝るので問い合わせることなく実装を行い実行して画像を確認し検証も行ってください。今のところ表示文字列が重なって表示されているのでそのようなところも一通り修正してください。残りの作業をタイムアウトするまで勧めてください。
+
+### Response 4 (summary) — Phase 2 物理ソルバー実装
+
+#### 新規・変更ファイル
+
+| ファイル | 変更内容 |
+|---------|---------|
+| `src/BondForce.h` | `BondGradient`, `bondEnergy`, `bondGradient`, `bondStress` の宣言 |
+| `src/BondForce.cpp` | 伸び・せん断・曲げ-ねじりエネルギー、勾配、応力の実装 |
+| `src/Simulation.h` | `SimConfig`, `Simulation` クラス宣言 |
+| `src/Simulation.cpp` | 陰的時間積分 (勾配降下 + Armijo ライン探索 + S³多様体更新) |
+| `src/main.cpp` | シミュレーションループ、荷重制御、GUI描画、`-headless N` テストモード追加 |
+
+#### Phase 2 で実装した主要アルゴリズム
+
+1. **ボンドエネルギー** (BondForce.cpp)
+   - 伸びエネルギー: `V_stretch = 0.5*kn*(dist-l0)^2`
+   - せん断エネルギー: `V_shear = 0.5*kt*theta^2`, `theta = angle(d_cur, R(qc)*d0)`
+     - `d_cur = normalize(pj-pi)` で位置-姿勢結合を実現
+   - 曲げ-ねじりエネルギー: `V_bt = 0.5*t^T*K*t`, `t = R0*Gl(qj)*qi`
+   - 各エネルギーの位置勾配・四元数勾配を解析的に計算
+
+2. **対角前処理付き勾配ステップ** (Simulation.cpp)
+   - `h_p[i] = m/dt^2 + Σ(kn+kt)`
+   - `h_q[i] = Iq/dt^2 + Σ(EI/l0)`
+   - Armijo バックトラッキング・ライン探索
+   - S³上の測地線更新: `q_new = q*cos(|dq|) + (dq/|dq|)*sin(|dq|)`
+
+3. **ヘッドレステスト** (`-headless N`): ウィンドウなしで N フレーム実行し破断フレームを出力
+
+#### パラメータ調整の試行錯誤
+
+| 試行 | dt | loadVel | 結果 | 問題 |
+|------|-----|---------|------|------|
+| 1 | 1e-2 | 0.15 | frame 0 破断 | loadVel 過大 (1フレームで3.3mm超) |
+| 2 | 1e-2 | 0.015 | frame 0-1 破断 | dt 大 → Jacobi 発散, 姿勢結合なし → スケール非整合 |
+| 3 | 論文値(2e-5等) | 7.5/15.0/2.5 | frame 0 破断 | τ が数千倍以上 → 別の問題あり |
+
+#### 現在判明している問題 (未解決)
+
+- 全スケールで frame 0 に破断
+- 診断出力結果:
+  ```
+  Low    maxTau=6.5e+06 (tauC=3e4) — 約217倍
+  Middle maxTau=2.4e+07            — 約787倍
+  High   maxTau=6.3e+11            — 天文学的値 (数値爆発の疑い)
+  ```
+- High スケールは bond 84,553/84,615 本が破断 → ほぼ全滅
+- せん断エネルギーの位置-姿勢結合 (`d_cur = normalize(pj-pi)`) は実装済み
+- 四元数が単位球から外れていないはずだが `t = R0*Gl(qj)*qi` が異常に大きい
+
+---
+
+### Prompt 5
+
+ここまでの作業を .md ファイルに記録してください
+
+### Response 5 (summary)
+
+本ファイル (`PROMPTS.md`) を現セッション分まで更新。
