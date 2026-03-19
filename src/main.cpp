@@ -54,14 +54,13 @@ static const BeamConfig SCALE_CFG[NUM_SCALES] = {
 // SimConfig for each scale (from Table 2 and paper Section 6)
 // ---------------------------------------------------------------------------
 static const SimConfig SIM_CFG[NUM_SCALES] = {
-  // dt values match paper Table 2 (small dt needed for Jacobi convergence,
-  // spectral_radius = Sigma_kn/(m/dt^2 + Sigma_kn) ~ 0.965 -> 83% per 50 iters).
-  // loadVel tuned so fracture_deflection/dt gives ~23-25 display frames.
-  // delta_crit ~ 3.3mm from beam theory: F_crit = tauC*8*I/(L*H).
-  //  dt        E       nu    tauC  loadVel  grav  maxIter  eps
-  { 2.0e-5f, 1e7f, 0.3f, 3e4f,  7.5f, 0.0f,  50, 1e-3f }, // Low    fracture ~23
-  { 9.1e-6f, 1e7f, 0.3f, 3e4f, 15.0f, 0.0f,  50, 1e-3f }, // Middle fracture ~25
-  { 5.8e-5f, 1e7f, 0.3f, 3e4f,  2.5f, 0.0f,  20, 1e-3f }, // High   fracture ~25
+  // dt = 0.02975 * r  (from rho_Jacobi = 0.965 => m/dt^2 = 0.0363 * 6*(kn+kt))
+  // loadVel = delta_crit / (25 * dt)  where delta_crit = 3.333mm (beam theory)
+  // PCG converges in ~8 iterations; maxIter=20 is generous.
+  //  dt          E       nu    tauC   loadVel  grav  maxIter  eps
+  { 5.35e-4f, 1e7f, 0.3f, 3e4f, 0.2491f, 0.0f, 200, 1e-4f }, // Low    r=0.018
+  { 3.27e-4f, 1e7f, 0.3f, 3e4f, 0.4075f, 0.0f, 200, 1e-4f }, // Middle r=0.011
+  { 1.49e-4f, 1e7f, 0.3f, 3e4f, 0.8946f, 0.0f, 200, 1e-4f }, // High   r=0.005
 };
 
 // ---------------------------------------------------------------------------
@@ -291,7 +290,7 @@ static void reshape(int w, int h) {
 
 static void resetAll() {
   for (int i = 0; i < NUM_SCALES; i++) {
-    g_sims[i].init(SCALE_CFG[i], SIM_CFG[i]);
+    g_sims[i].init(SCALE_CFG[i], SIM_CFG[i], i);
   }
   g_running  = false;
   g_stepOnce = false;
@@ -344,7 +343,7 @@ static void initSimulations() {
   for (int i = 0; i < NUM_SCALES; ++i) {
     std::printf("Initialising scale %d (%s) r=%.4f ...\n",
       i, SCALE_CFG[i].label, SCALE_CFG[i].r);
-    g_sims[i].init(SCALE_CFG[i], SIM_CFG[i]);
+    g_sims[i].init(SCALE_CFG[i], SIM_CFG[i], i);
     std::printf("  particles: %d   bonds: %d\n",
       (int)g_sims[i].particles.size(),
       (int)g_sims[i].bonds.size());

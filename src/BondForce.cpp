@@ -155,7 +155,8 @@ static float shearEnergy(const Particle& pi, const Particle& pj,
   glm::vec3 d_exp    = rotVec(qc, b.d0);
   float cos_theta    = glm::clamp(glm::dot(d_cur, d_exp), -1.0f, 1.0f);
   float theta        = std::acos(cos_theta);
-  return 0.5f * kt * theta * theta;
+  // Shear displacement delta_s = l0 * theta; energy = 0.5*kt*delta_s^2 = 0.5*kt*l0^2*theta^2
+  return 0.5f * kt * b.l0 * b.l0 * theta * theta;
 }
 
 // ---------------------------------------------------------------------------
@@ -233,7 +234,9 @@ BondGradient bondGradient(const Particle& pi, const Particle& pj,
         float sin_theta    = std::sin(theta);
 
         if (sin_theta > 1e-6f) {
-          float factor = st.kt * theta / sin_theta;
+          // factor includes l0^2 because shear energy = 0.5*kt*l0^2*theta^2
+          // (shear displacement delta_s = l0*theta, V = 0.5*kt*delta_s^2)
+          float factor = st.kt * b.l0 * b.l0 * theta / sin_theta;
 
           // ---- Position gradient ----
           // d(cos_theta)/d(pj) = (1/dist) * (d_exp - cos_theta*d_cur)
@@ -353,7 +356,7 @@ void bondStress(const Particle& pi, const Particle& pj, const Bond& b,
         float theta        = std::acos(cos_theta);
         float sin_theta    = std::sin(theta);
         if (sin_theta > 1e-6f) {
-          float factor = st.kt * theta / sin_theta;
+          float factor = st.kt * b.l0 * b.l0 * theta / sin_theta;
           // Fs = dV/dpj (force in direction that increases shear energy)
           Fs = -(factor / dist_b) * (d_exp - cos_theta * d_cur);
         }
@@ -361,8 +364,11 @@ void bondStress(const Particle& pi, const Particle& pj, const Bond& b,
     }
   }
 
-  // Normal stress: axial force / area + bending moment * r0 / I
-  sigma = glm::length(Fn) / st.S + Mb * st.r0 / st.I;
+  // Normal stress: tensile axial force / area + bending moment * r0 / I.
+  // Only positive (tensile) axial force contributes; compression does not cause fracture.
+  float delta_axial = dist > 1e-12f ? (dist - b.l0) : 0.0f;
+  float Fn_tensile  = std::max(0.0f, st.kn * delta_axial);
+  sigma = Fn_tensile / st.S + Mb * st.r0 / st.I;
 
   // Shear stress: transverse shear force + torsion
   tau = glm::length(Fs) / st.S + Mt * st.r0 / st.J;
