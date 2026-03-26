@@ -77,8 +77,10 @@ static const SimConfig SIM_CFG[NUM_SCALES] = {
 // Simulation objects and control state
 // ---------------------------------------------------------------------------
 static Simulation g_sims[NUM_SCALES];
-static bool g_running  = false;
-static bool g_stepOnce = false;
+static bool g_running          = true;   // auto-start: simulation begins immediately
+static bool g_stepOnce         = false;
+static bool g_captureMode      = false;  // -capture: save every frame as BMP then exit
+static int  g_captureMaxFrames = 40;
 
 // ---------------------------------------------------------------------------
 // BMP screenshot helper
@@ -366,6 +368,13 @@ static void display() {
   glRasterPos2f(WIN_W * 0.5f - 170.0f, 4.0f);
   drawString("SPACE=start/pause  N=step  R=reset  S=screenshot  Q/ESC=quit");
 
+  if (g_captureMode) {
+    char path[64];
+    std::snprintf(path, sizeof(path), "capture_fr%04d.bmp", g_sims[0].frame);
+    saveBMP(path);
+    std::printf("Saved: %s\n", path);
+  }
+
   glutSwapBuffers();
 }
 
@@ -415,6 +424,12 @@ static void keyboard(unsigned char key, int /*x*/, int /*y*/) {
 // Idle callback: steps simulation and requests redisplay.
 // Called by GLUT whenever there are no pending events.
 static void idleFunc() {
+  if (g_captureMode) {
+    if (g_sims[0].frame >= g_captureMaxFrames) std::exit(0);
+    for (int i = 0; i < NUM_SCALES; i++) g_sims[i].step();
+    glutPostRedisplay();
+    return;
+  }
   if (g_running) {
     for (int i = 0; i < NUM_SCALES; i++)
       g_sims[i].step();
@@ -476,13 +491,18 @@ static void runHeadless(int maxFrames) {
 }
 
 int main(int argc, char** argv) {
-  // -headless [N]: run without window, print fracture frames, exit
+  // Parse arguments before GLUT init so we can handle -headless without a window.
   for (int a = 1; a < argc; a++) {
     std::string arg(argv[a]);
     if (arg == "-headless" || arg == "--headless") {
       int frames = (a + 1 < argc) ? std::atoi(argv[a + 1]) : 60;
       runHeadless(frames);
       return 0;
+    }
+    if (arg == "-capture" || arg == "--capture") {
+      g_captureMode      = true;
+      g_captureMaxFrames = (a + 1 < argc) ? std::atoi(argv[a + 1]) : 40;
+      g_running          = false; // idle loop controls capture; g_running not used
     }
   }
 
