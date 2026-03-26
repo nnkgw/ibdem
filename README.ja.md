@@ -1,9 +1,9 @@
 [English](README.md)
 
-# ibdem — 陰的 BDEM 三点曲げ試験（Fig. 5 再現）
+# ibdem — Implicit BDEM 三点曲げ試験（Fig. 5 再現）
 
 <p align="center">
-  <img src="animation.gif" alt="三点曲げシミュレーション" width="800">
+  <img src="images/animation.gif" alt="三点曲げシミュレーション" width="800">
 </p>
 
 以下の論文における三点曲げスケール一貫性実験の C++ 実装です：

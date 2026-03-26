@@ -3,7 +3,7 @@
 # ibdem — Implicit BDEM Three-Point Bending (Fig. 5 Reproduction)
 
 <p align="center">
-  <img src="animation.gif" alt="Three-point bending simulation" width="800">
+  <img src="images/animation.gif" alt="Three-point bending simulation" width="800">
 </p>
 
 A C++ reproduction of the three-point bending scale-consistency experiment from:
