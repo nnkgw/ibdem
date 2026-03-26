@@ -334,6 +334,7 @@ int Simulation::checkFracture() {
         particles[b.j].pos.y > beamCfg.H * 0.5f) continue;
     float sigma = 0.0f, tau = 0.0f;
     bondStress(particles[b.i], particles[b.j], b, simCfg.E, simCfg.nu, sigma, tau);
+    b.sigma = sigma;
     if (sigma > maxSigma) { maxSigma = sigma; }
     if (tau   > maxTau)   { maxTau   = tau;   maxTauBond = bi; }
     if (sigma > simCfg.tauC || tau > simCfg.tauC) {

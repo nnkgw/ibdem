@@ -23,10 +23,8 @@
 #include <vector>
 #include <cmath>
 #include <cstdio>
+#include <cstdint>
 #include <algorithm>
-#include <thread>
-#include <atomic>
-#include <chrono>
 
 #include "Particle.h"
 #include "Bond.h"
@@ -58,7 +56,7 @@ static const BeamConfig SCALE_CFG[NUM_SCALES] = {
 // ---------------------------------------------------------------------------
 static const SimConfig SIM_CFG[NUM_SCALES] = {
   // Quasi-static implicit integration: large dt so m/dt^2 << kn (elastic-dominated).
-  // m/dt^2/kn ratios: Low=8.6e-5, Middle=3.2e-5, High=6.7e-6 — all negligible.
+  // m/dt^2/kn ratios: Low=8.6e-5, Middle=3.2e-5, High=6.7e-6 -- all negligible.
   // Jacobi-preconditioned condition number kappa ~ O(N_x) -> PCG converges in
   // sqrt(kappa) iterations. With 10 outer * 20 PCG inner = 200 CG steps/frame:
   //   Low   (N_x~28):  converges in ~28 CG steps.
@@ -79,36 +77,54 @@ static const SimConfig SIM_CFG[NUM_SCALES] = {
 // Simulation objects and control state
 // ---------------------------------------------------------------------------
 static Simulation g_sims[NUM_SCALES];
-
-// Simulation is driven from a background thread so that the GLUT event loop
-// (and thus OpenGL redraws) is never blocked by a long step() call.
-static std::atomic<bool> g_running   {false};
-static std::atomic<bool> g_stepOnce  {false};
-static std::atomic<bool> g_simAlive  {false};  // controls the sim thread loop
-static std::atomic<bool> g_wantRedraw{false};  // sim thread signals need for redraw
-static std::thread       g_simThread;
+static bool g_running  = false;
+static bool g_stepOnce = false;
 
 // ---------------------------------------------------------------------------
-// Simulation thread: steps all scales, then signals redraw.
-// Reads g_running / g_stepOnce set by the GLUT keyboard callback.
-// Particle positions are read concurrently by display(); on x86-64 aligned
-// float reads are effectively atomic so no torn-value crash occurs.
+// BMP screenshot helper
 // ---------------------------------------------------------------------------
-static void simLoop() {
-  while (g_simAlive.load()) {
-    if (g_running.load()) {
-      for (int i = 0; i < NUM_SCALES; i++)
-        g_sims[i].step();
-      g_wantRedraw.store(true);
-    } else if (g_stepOnce.load()) {
-      for (int i = 0; i < NUM_SCALES; i++)
-        g_sims[i].step();
-      g_stepOnce.store(false);
-      g_wantRedraw.store(true);
-    } else {
-      std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    }
+static void saveBMP(const char* path) {
+  int w = WIN_W, h = WIN_H;
+  std::vector<uint8_t> pixels((size_t)w * h * 3);
+  glReadPixels(0, 0, w, h, GL_BGR_EXT, GL_UNSIGNED_BYTE, pixels.data());
+
+  // OpenGL origin is bottom-left; BMP expects top-left -- flip vertically
+  for (int y = 0; y < h / 2; y++) {
+    uint8_t* rowA = pixels.data() + (size_t)y        * w * 3;
+    uint8_t* rowB = pixels.data() + (size_t)(h-1-y)  * w * 3;
+    for (int x = 0; x < w * 3; x++) std::swap(rowA[x], rowB[x]);
   }
+
+  // BMP row size must be aligned to 4 bytes
+  int rowBytes = w * 3;
+  int pad      = (4 - rowBytes % 4) % 4;
+  int dataSize = (rowBytes + pad) * h;
+  int fileSize = 54 + dataSize;
+
+  uint8_t hdr[54] = {};
+  hdr[0] = 'B'; hdr[1] = 'M';
+  hdr[2] = (uint8_t)(fileSize      ); hdr[3]  = (uint8_t)(fileSize >> 8);
+  hdr[4] = (uint8_t)(fileSize >> 16); hdr[5]  = (uint8_t)(fileSize >> 24);
+  hdr[10] = 54; // pixel data offset
+  hdr[14] = 40; // BITMAPINFOHEADER size
+  hdr[18] = (uint8_t)(w      ); hdr[19] = (uint8_t)(w >> 8);
+  hdr[20] = (uint8_t)(w >> 16); hdr[21] = (uint8_t)(w >> 24);
+  hdr[22] = (uint8_t)(h      ); hdr[23] = (uint8_t)(h >> 8);
+  hdr[24] = (uint8_t)(h >> 16); hdr[25] = (uint8_t)(h >> 24);
+  hdr[26] = 1;  // planes
+  hdr[28] = 24; // bits per pixel
+  hdr[34] = (uint8_t)(dataSize      ); hdr[35] = (uint8_t)(dataSize >> 8);
+  hdr[36] = (uint8_t)(dataSize >> 16); hdr[37] = (uint8_t)(dataSize >> 24);
+
+  FILE* f = std::fopen(path, "wb");
+  if (!f) { std::printf("saveBMP: cannot open %s\n", path); return; }
+  std::fwrite(hdr, 1, 54, f);
+  uint8_t padding[3] = {};
+  for (int y = 0; y < h; y++) {
+    std::fwrite(pixels.data() + (size_t)y * w * 3, 1, (size_t)rowBytes, f);
+    if (pad) std::fwrite(padding, 1, (size_t)pad, f);
+  }
+  std::fclose(f);
 }
 
 // ---------------------------------------------------------------------------
@@ -160,14 +176,19 @@ static void drawScale(int index) {
   glClear(GL_COLOR_BUFFER_BIT);
   glDisable(GL_SCISSOR_TEST);
 
-  // -- Draw active bonds as thin lines (XY projection) --
+  // -- Draw active bonds as thin lines, colored by stress level --
   {
     float lw = std::max(0.5f, cfg.r * worldToPixel * 0.3f);
     glLineWidth(lw);
-    glColor3f(0.45f, 0.50f, 0.55f);
     glBegin(GL_LINES);
     for (const auto& b : sim.bonds) {
       if (b.broken) continue;
+      // Stress color: blue(0) -> green(0.5) -> red(1.0) by sigma/tauC
+      float t = glm::clamp(b.sigma / cfg.tauC, 0.0f, 1.0f);
+      float cr = t > 0.5f ? 2.0f * (t - 0.5f) : 0.0f;
+      float cg = t < 0.5f ? 2.0f * t : 2.0f * (1.0f - t);
+      float cb = t < 0.5f ? 1.0f - 2.0f * t : 0.0f;
+      glColor3f(cr, cg, cb);
       const glm::vec3& pi = sim.particles[b.i].pos;
       const glm::vec3& pj = sim.particles[b.j].pos;
       glVertex2f(pi.x, pi.y);
@@ -278,6 +299,29 @@ static void drawScale(int index) {
     drawString("load point");
 
     glPointSize(1.0f);
+
+    // Stress color bar legend (bond colors)
+    float barY  = legY0 + 3.5f * legDy;
+    float barX0 = legX;
+    float barX1 = legX + xRange * 0.15f;
+    int   steps = 20;
+    glLineWidth(4.0f);
+    glBegin(GL_LINES);
+    for (int k = 0; k < steps; k++) {
+      float t  = (float)k / (float)(steps - 1);
+      float cr = t > 0.5f ? 2.0f * (t - 0.5f) : 0.0f;
+      float cg = t < 0.5f ? 2.0f * t : 2.0f * (1.0f - t);
+      float cb = t < 0.5f ? 1.0f - 2.0f * t : 0.0f;
+      glColor3f(cr, cg, cb);
+      float bx = barX0 + t * (barX1 - barX0);
+      glVertex2f(bx, barY);
+      glVertex2f(bx, barY + legDy * 0.6f);
+    }
+    glEnd();
+    glLineWidth(1.0f);
+    glColor3f(0.90f, 0.90f, 0.90f);
+    glRasterPos2f(barX0, barY + legDy * 0.7f);
+    drawString("bond stress: 0 -> tauC");
   }
 }
 
@@ -319,8 +363,8 @@ static void display() {
 
   // Controls hint (bottom centre of full window, pixel coords)
   glColor3f(0.65f, 0.65f, 0.65f);
-  glRasterPos2f(WIN_W * 0.5f - 140.0f, 4.0f);
-  drawString("SPACE=start/pause  N=step  R=reset  Q/ESC=quit");
+  glRasterPos2f(WIN_W * 0.5f - 170.0f, 4.0f);
+  drawString("SPACE=start/pause  N=step  R=reset  S=screenshot  Q/ESC=quit");
 
   glutSwapBuffers();
 }
@@ -330,10 +374,8 @@ static void reshape(int w, int h) {
 }
 
 static void resetAll() {
-  g_running.store(false);
-  g_stepOnce.store(false);
-  // Brief wait so the sim thread finishes its current step before we reinit.
-  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  g_running  = false;
+  g_stepOnce = false;
   for (int i = 0; i < NUM_SCALES; i++)
     g_sims[i].init(SCALE_CFG[i], SIM_CFG[i], i);
 }
@@ -343,32 +385,53 @@ static void keyboard(unsigned char key, int /*x*/, int /*y*/) {
     case 27:   // ESC
     case 'q':
     case 'Q':
-      g_simAlive.store(false);
       std::exit(0);
       break;
     case ' ':
-      g_running.store(!g_running.load());
+      g_running = !g_running;
       break;
     case 'n':
     case 'N':
-      g_stepOnce.store(true);
+      g_stepOnce = true;
       break;
     case 'r':
     case 'R':
       resetAll();
       glutPostRedisplay();
       break;
+    case 's':
+    case 'S': {
+      char path[64];
+      std::snprintf(path, sizeof(path), "capture_fr%04d.bmp", g_sims[0].frame);
+      saveBMP(path);
+      std::printf("Saved: %s\n", path);
+      break;
+    }
     default:
       break;
   }
 }
 
-// Timer fires ~60fps; triggers redisplay and forwards sim-thread redraw requests.
-// Simulation is no longer stepped here — it runs in simLoop() on g_simThread.
-static void timerFunc(int val) {
-  if (g_wantRedraw.exchange(false))
+// Idle callback: steps simulation and requests redisplay.
+// Called by GLUT whenever there are no pending events.
+static void idleFunc() {
+  if (g_running) {
+    for (int i = 0; i < NUM_SCALES; i++)
+      g_sims[i].step();
     glutPostRedisplay();
-  glutTimerFunc(16, timerFunc, val);
+  } else if (g_stepOnce) {
+    for (int i = 0; i < NUM_SCALES; i++)
+      g_sims[i].step();
+    g_stepOnce = false;
+    glutPostRedisplay();
+  }
+}
+
+// Heartbeat timer: ensures the window redraws at least once per second
+// even while paused (e.g. to keep the title bar responsive).
+static void timerFunc(int val) {
+  glutPostRedisplay();
+  glutTimerFunc(1000, timerFunc, val);
 }
 
 // ---------------------------------------------------------------------------
@@ -385,7 +448,7 @@ static void initSimulations() {
       (int)g_sims[i].bonds.size());
   }
   std::printf("Initialisation complete.\n");
-  std::printf("Press SPACE to start simulation, N to step, R to reset, Q/ESC to quit.\n");
+  std::printf("Press SPACE to start simulation, N to step, R to reset, S to screenshot, Q/ESC to quit.\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -432,19 +495,11 @@ int main(int argc, char** argv) {
   glutDisplayFunc(display);
   glutReshapeFunc(reshape);
   glutKeyboardFunc(keyboard);
-  glutTimerFunc(16, timerFunc, 0);
+  glutIdleFunc(idleFunc);
+  glutTimerFunc(1000, timerFunc, 0);
 
   initSimulations();
 
-  // Start the simulation thread before entering the GLUT event loop.
-  // The thread runs simLoop() which steps all scales when g_running is true.
-  g_simAlive.store(true);
-  g_simThread = std::thread(simLoop);
-
   glutMainLoop();
-
-  // Reached only if GLUT returns (e.g. freeglut with GLUT_ACTION_CONTINUE_EXECUTION).
-  g_simAlive.store(false);
-  if (g_simThread.joinable()) g_simThread.join();
   return 0;
 }

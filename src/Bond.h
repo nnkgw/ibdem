@@ -12,5 +12,6 @@ struct Bond {
   glm::vec3 d0;    // unit rest direction from i to j
   glm::quat q0;    // rotation that maps (1,0,0) to d0;
                    // used to transform the bend/twist vector to the bond-local frame
-  bool broken;     // true after the bond has fractured
+  bool  broken;    // true after the bond has fractured
+  float sigma = 0.0f;  // cached normal stress (Pa) — updated by checkFracture(), used for rendering
 };
