@@ -89,13 +89,8 @@ static void saveBMP(const char* path) {
   int w = WIN_W, h = WIN_H;
   std::vector<uint8_t> pixels((size_t)w * h * 3);
   glReadPixels(0, 0, w, h, GL_BGR_EXT, GL_UNSIGNED_BYTE, pixels.data());
-
-  // OpenGL origin is bottom-left; BMP expects top-left -- flip vertically
-  for (int y = 0; y < h / 2; y++) {
-    uint8_t* rowA = pixels.data() + (size_t)y        * w * 3;
-    uint8_t* rowB = pixels.data() + (size_t)(h-1-y)  * w * 3;
-    for (int x = 0; x < w * 3; x++) std::swap(rowA[x], rowB[x]);
-  }
+  // No vertical flip needed: both OpenGL (glReadPixels) and BMP store rows
+  // bottom-first, so the data is already in the correct order for a BMP file.
 
   // BMP row size must be aligned to 4 bytes
   int rowBytes = w * 3;
