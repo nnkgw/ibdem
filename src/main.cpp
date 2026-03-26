@@ -263,69 +263,8 @@ static void drawScale(int index) {
   glDisable(GL_POINT_SMOOTH);
   glPointSize(1.0f);
 
-  // (Per-scale labels are drawn in the full-window overlay to avoid overlapping
-  //  with the window title text. See display() overlay section.)
-
-  // Legend: bottom-left corner, only for the first viewport to avoid clutter
-  if (index == 0) {
-    float legX  = xMin + xRange * 0.02f;
-    float legY0 = yMin + (yMax - yMin) * 0.05f;   // near bottom
-    float legDy = (yMax - yMin) * 0.05f;           // spacing between items
-
-    glPointSize(8.0f);
-
-    // Regular particle dot
-    glBegin(GL_POINTS);
-    glColor3f(0.70f, 0.72f, 0.75f);
-    glVertex2f(legX, legY0);
-    glEnd();
-    glColor3f(0.90f, 0.90f, 0.90f);
-    glRasterPos2f(legX + xRange * 0.025f, legY0 - legDy * 0.05f);
-    drawString("particle");
-
-    // Support dot (one row above)
-    glBegin(GL_POINTS);
-    glColor3f(0.25f, 0.50f, 0.95f);
-    glVertex2f(legX, legY0 + legDy);
-    glEnd();
-    glColor3f(0.90f, 0.90f, 0.90f);
-    glRasterPos2f(legX + xRange * 0.025f, legY0 + legDy * 0.95f);
-    drawString("support (fixed)");
-
-    // Load dot (two rows above)
-    glBegin(GL_POINTS);
-    glColor3f(0.95f, 0.25f, 0.20f);
-    glVertex2f(legX, legY0 + 2.0f * legDy);
-    glEnd();
-    glColor3f(0.90f, 0.90f, 0.90f);
-    glRasterPos2f(legX + xRange * 0.025f, legY0 + legDy * 1.95f);
-    drawString("load point");
-
-    glPointSize(1.0f);
-
-    // Stress color bar legend (bond colors)
-    float barY  = legY0 + 3.5f * legDy;
-    float barX0 = legX;
-    float barX1 = legX + xRange * 0.15f;
-    int   steps = 20;
-    glLineWidth(4.0f);
-    glBegin(GL_LINES);
-    for (int k = 0; k < steps; k++) {
-      float t  = (float)k / (float)(steps - 1);
-      float cr = t > 0.5f ? 2.0f * (t - 0.5f) : 0.0f;
-      float cg = t < 0.5f ? 2.0f * t : 2.0f * (1.0f - t);
-      float cb = t < 0.5f ? 1.0f - 2.0f * t : 0.0f;
-      glColor3f(cr, cg, cb);
-      float bx = barX0 + t * (barX1 - barX0);
-      glVertex2f(bx, barY);
-      glVertex2f(bx, barY + legDy * 0.6f);
-    }
-    glEnd();
-    glLineWidth(1.0f);
-    glColor3f(0.90f, 0.90f, 0.90f);
-    glRasterPos2f(barX0, barY + legDy * 0.7f);
-    drawString("bond stress: 0 -> tauC");
-  }
+  // (Legend is drawn in the full-window overlay to avoid overlapping with simulation.
+  //  See display() overlay section.)
 }
 
 // ---------------------------------------------------------------------------
@@ -382,6 +321,67 @@ static void display() {
       }
       drawString(buf);
     }
+  }
+
+  // Legend (screen pixel coords, first viewport, bottom-left)
+  {
+    const float lx0 = 6.0f;
+    const float ly0 = 22.0f;
+    const float ldy = 18.0f;
+
+    glPointSize(8.0f);
+    glEnable(GL_POINT_SMOOTH);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    glBegin(GL_POINTS);
+    glColor3f(0.70f, 0.72f, 0.75f);
+    glVertex2f(lx0 + 4.0f, ly0);
+    glEnd();
+    glColor3f(0.90f, 0.90f, 0.90f);
+    glRasterPos2f(lx0 + 14.0f, ly0 - 4.0f);
+    drawString("particle");
+
+    glBegin(GL_POINTS);
+    glColor3f(0.25f, 0.50f, 0.95f);
+    glVertex2f(lx0 + 4.0f, ly0 + ldy);
+    glEnd();
+    glColor3f(0.90f, 0.90f, 0.90f);
+    glRasterPos2f(lx0 + 14.0f, ly0 + ldy - 4.0f);
+    drawString("support (fixed)");
+
+    glBegin(GL_POINTS);
+    glColor3f(0.95f, 0.25f, 0.20f);
+    glVertex2f(lx0 + 4.0f, ly0 + 2.0f * ldy);
+    glEnd();
+    glColor3f(0.90f, 0.90f, 0.90f);
+    glRasterPos2f(lx0 + 14.0f, ly0 + 2.0f * ldy - 4.0f);
+    drawString("load point");
+
+    glDisable(GL_POINT_SMOOTH);
+    glDisable(GL_BLEND);
+    glPointSize(1.0f);
+
+    const float barY0 = ly0 + 3.5f * ldy;
+    const float barX1 = lx0 + 120.0f;
+    const int   steps = 20;
+    glLineWidth(4.0f);
+    glBegin(GL_LINES);
+    for (int k = 0; k < steps; k++) {
+      float t  = (float)k / (float)(steps - 1);
+      float cr = t > 0.5f ? 2.0f * (t - 0.5f) : 0.0f;
+      float cg = t < 0.5f ? 2.0f * t : 2.0f * (1.0f - t);
+      float cb = t < 0.5f ? 1.0f - 2.0f * t : 0.0f;
+      glColor3f(cr, cg, cb);
+      float bx = lx0 + t * (barX1 - lx0);
+      glVertex2f(bx, barY0);
+      glVertex2f(bx, barY0 + 8.0f);
+    }
+    glEnd();
+    glLineWidth(1.0f);
+    glColor3f(0.90f, 0.90f, 0.90f);
+    glRasterPos2f(lx0, barY0 + 11.0f);
+    drawString("bond stress: 0 -> tauC");
   }
 
   // Controls hint (bottom centre)
