@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 project(ibdem CXX)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${PROJECT_SOURCE_DIR}/bin)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -75,4 +76,9 @@ else()
   else()
     message(STATUS "GLUT: using freeglut (Linux)   -- install via: sudo apt install freeglut3-dev")
   endif()
+endif()
+
+# ---------- MSVC: treat source files as UTF-8 (suppresses C4819) ----------
+if(MSVC)
+  target_compile_options(${PROJECT_NAME} PRIVATE /utf-8)
 endif()
