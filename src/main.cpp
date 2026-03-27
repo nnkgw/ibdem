@@ -87,7 +87,7 @@ static Simulation g_sims[NUM_SCALES];
 static bool g_running          = true;   // auto-start: simulation begins immediately
 static bool g_stepOnce         = false;
 static bool g_captureMode      = false;  // -capture: save every frame as BMP then exit
-static int  g_captureMaxFrames = 60;
+static int  g_captureMaxFrames = 120;
 static std::vector<uint8_t> g_prevPixels; // previous frame pixels for diff output
 
 // ---------------------------------------------------------------------------
@@ -203,9 +203,23 @@ static void drawScale(int index) {
   glClear(GL_COLOR_BUFFER_BIT);
   glDisable(GL_SCISSOR_TEST);
 
+  float lw = std::max(0.5f, cfg.r * worldToPixel * 0.3f);
+
+  // -- Draw broken bonds first (crack visualization: dark crimson) --
+  if (sim.fractureFrame >= 0) {
+    glLineWidth(lw);
+    glColor3f(0.45f, 0.03f, 0.03f);
+    glBegin(GL_LINES);
+    for (const auto& b : sim.bonds) {
+      if (!b.broken) continue;
+      glVertex2f(sim.particles[b.i].pos.x, sim.particles[b.i].pos.y);
+      glVertex2f(sim.particles[b.j].pos.x, sim.particles[b.j].pos.y);
+    }
+    glEnd();
+  }
+
   // -- Draw active bonds as thin lines, colored by stress level --
   {
-    float lw = std::max(0.5f, cfg.r * worldToPixel * 0.3f);
     glLineWidth(lw);
     glBegin(GL_LINES);
     for (const auto& b : sim.bonds) {
@@ -552,7 +566,7 @@ int main(int argc, char** argv) {
     }
     if (arg == "-capture" || arg == "--capture") {
       g_captureMode      = true;
-      g_captureMaxFrames = (a + 1 < argc) ? std::atoi(argv[a + 1]) : 40;
+      g_captureMaxFrames = (a + 1 < argc) ? std::atoi(argv[a + 1]) : 120;
       g_running          = false; // idle loop controls capture; g_running not used
       ensureDir("diff");          // create diff/ output directory
     }

@@ -41,3 +41,7 @@ xcuserdata
 #emacs
 *~
 XTAGS
+
+#Capture output (BMP frames and diff images)
+*.bmp
+bin/diff/
