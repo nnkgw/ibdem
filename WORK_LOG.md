@@ -1,6 +1,6 @@
 # 作業ログ — ibdem (Fig. 5 再現)
 
-## 最終更新: 2026-03-26
+## 最終更新: 2026-03-27
 
 ---
 
@@ -83,6 +83,11 @@ Scale High    : fracture at frame 24  (target 25) ✓
 | 凡例をワールド座標からスクリーン座標 (overlay) へ移動 | main.cpp | シミュレーション結果と重ならなくなった |
 | `make_gif.py` 新規作成 | make_gif.py | capture_fr*.bmp → animation.gif を自動生成 |
 | README.md / README.ja.md ティーザー GIF 追加 | README.md, README.ja.md | GitHub トップページにアニメーションが表示される |
+| 破断ボンドを暗いクリムゾンで描画 | main.cpp | 亀裂パターンが背景色との対比で視認可能になった |
+| デフォルトキャプチャフレームを 120 に増加 | main.cpp | 破断後の亀裂伝播を十分なフレーム数で記録 |
+| `*.bmp` / `bin/diff/` を .gitignore に追加 | .gitignore | キャプチャ出力の誤コミットを防止 |
+| `bondStress()` sigma を符号付き軸力式に修正 | BondForce.cpp | 圧縮ゾーン top ボンドの過早破断を物理的に抑制 |
+| `checkFracture()` 初期破断前は下半分のみ、後は全断面許可 | Simulation.cpp | frame 14 過早破断を解消しつつ亀裂が断面全体を貫通するようになった |
 
 ---
 
@@ -100,11 +105,11 @@ cd bin
 .\ibdem.exe -headless 80
 
 # Capture モード (全フレームを BMP として保存)
-.\ibdem.exe -capture 60
-# → capture_fr0001.bmp ... capture_fr0060.bmp
+.\ibdem.exe -capture 120
+# → capture_fr0001.bmp ... capture_fr0120.bmp
 # → diff/diff_fr0002.bmp ... (フレーム間差分 ×10)
 
-# アニメーション GIF 生成
+# アニメーション GIF 生成 (10fps、50% 縮小)
 cd ..
-python make_gif.py bin --out animation.gif
+python make_gif.py bin --out images/animation.gif --fps 10 --scale 0.5
 ```

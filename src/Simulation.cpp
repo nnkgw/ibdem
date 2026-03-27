@@ -335,15 +335,14 @@ int Simulation::checkFracture() {
     if (sigma > maxSigma) { maxSigma = sigma; }
     if (tau   > maxTau)   { maxTau   = tau;   maxTauBond = bi; }
 
-    // Fracture criterion: only fracture bonds under net axial tension (delta > 0).
-    // Compression-zone bonds (top half) have delta_axial < 0 and are therefore
-    // protected from premature fracture — the bending-moment term in sigma is always
-    // positive regardless of zone, which would otherwise cause the fine-scale (High)
-    // top-half bonds to fracture prematurely.  After the bottom crack opens the stress
-    // redistribution brings bonds at the crack tip into tension, allowing the crack to
-    // propagate naturally upward through the full cross-section.
-    float delta_axial = glm::length(particles[b.j].pos - particles[b.i].pos) - b.l0;
-    if (delta_axial <= 0.0f) continue;
+    // Before the initial fracture: restrict to the tension zone (bottom half of the beam).
+    // This prevents premature shear fracture near the load-application point, which
+    // creates a stress concentration at the top.  Once the first fracture has occurred
+    // (fractureFrame >= 0), all bonds are eligible so the crack can propagate upward.
+    if (fractureFrame < 0) {
+      float y_mid = (particles[b.i].pos.y + particles[b.j].pos.y) * 0.5f;
+      if (y_mid > beamCfg.H * 0.5f) continue;
+    }
     if (sigma > simCfg.tauC || tau > simCfg.tauC) {
       b.broken = true;
       ++count;

@@ -354,11 +354,14 @@ void bondStress(const Particle& pi, const Particle& pj, const Bond& b,
     }
   }
 
-  // Normal stress: tensile axial force / area + bending moment * r0 / I.
-  // Only positive (tensile) axial force contributes; compression does not cause fracture.
+  // Normal stress: maximum tensile stress at the outer fibre of the bond cross-section.
+  // sigma = max(0, Fn/S + Mb*r0/I) where Fn is the *signed* axial force.
+  // For compressive bonds (delta < 0) the axial compression cancels the bending term;
+  // since r0 << H/2, top-half bonds remain near zero and do not fracture prematurely.
+  // Crack-tip bonds enter tension as the crack opens, enabling natural upward propagation.
   float delta_axial = dist > 1e-12f ? (dist - b.l0) : 0.0f;
-  float Fn_tensile  = std::max(0.0f, st.kn * delta_axial);
-  sigma = Fn_tensile / st.S + Mb * st.r0 / st.I;
+  float Fn_signed   = st.kn * delta_axial;   // positive = tension, negative = compression
+  sigma = std::max(0.0f, Fn_signed / st.S + Mb * st.r0 / st.I);
 
   // Shear stress: transverse shear force + torsion
   tau = glm::length(Fs) / st.S + Mt * st.r0 / st.J;
